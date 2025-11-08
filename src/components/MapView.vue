@@ -553,8 +553,26 @@ const recenterMap = () => {
   }
 }
 
+// Expose invalidate size method (for container resize without recentering)
+const invalidateMapSize = () => {
+  if (map.value) {
+    // Mark as programmatic to prevent userHasMoved flag
+    map.value._programmaticMove = true
+    
+    setTimeout(() => {
+      map.value.invalidateSize()
+      
+      // Reset flag after invalidation
+      setTimeout(() => {
+        map.value._programmaticMove = false
+      }, 100)
+    }, 100)
+  }
+}
+
 defineExpose({
-  recenterMap
+  recenterMap,
+  invalidateMapSize
 })
 </script>
 

@@ -69,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { NConfigProvider } from 'naive-ui'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import FiltersPanel from '@/components/panels/FiltersPanel.vue'
@@ -130,9 +130,9 @@ const stopResize = () => {
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
   
-  // Recenter map after resize
-  if (mapPanelRef.value && mapPanelRef.value.recenterMap) {
-    mapPanelRef.value.recenterMap()
+  // Notify map to adjust to new container size without recentering
+  if (mapPanelRef.value && mapPanelRef.value.invalidateMapSize) {
+    mapPanelRef.value.invalidateMapSize()
   }
 }
 
@@ -144,6 +144,15 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('mousemove', handleMouseMove)
   document.removeEventListener('mouseup', stopResize)
+})
+
+// Watch for panel collapse/expand to adjust map size without recentering
+watch([leftPanelCollapsed, rightPanelCollapsed], () => {
+  nextTick(() => {
+    if (mapPanelRef.value && mapPanelRef.value.invalidateMapSize) {
+      mapPanelRef.value.invalidateMapSize()
+    }
+  })
 })
 </script>
 

@@ -14,6 +14,7 @@ import { NButton, NButtonGroup, NIcon } from 'naive-ui'
 import { Search as SearchIcon, Expand as ExpandIcon } from '@vicons/ionicons5'
 import MapView from '@/components/MapView.vue'
 import Legend from '@/components/Legend.vue'
+import MapBox from '@/components/MapView_Mapbox.vue'
 import FilterBar from '@/components/common/FilterBar.vue'
 
 const zoomLevel = ref(100)
@@ -21,11 +22,16 @@ const mapViewRef = ref(null)
 
 defineEmits(['zoom-in', 'zoom-out', 'fullscreen'])
 
-// Expose method to recenter map
+// Expose methods
 defineExpose({
   recenterMap: () => {
     if (mapViewRef.value && mapViewRef.value.recenterMap) {
       mapViewRef.value.recenterMap()
+    }
+  },
+  invalidateMapSize: () => {
+    if (mapViewRef.value && mapViewRef.value.invalidateMapSize) {
+      mapViewRef.value.invalidateMapSize()
     }
   }
 })
