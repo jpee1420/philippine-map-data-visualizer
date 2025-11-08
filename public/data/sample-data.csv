@@ -1,5 +1,6 @@
-region,province,city,population,gdp_millions,literacy_rate,employment_rate,poverty_rate
-Ilocos Region,Ilocos Norte,Laoag City,111651,15234,98.5,94.2,12.3
+region,province,city,population,gdp_millions,literacy_rate,employment_rate,poverty_rate,gender,age_group
+Ilocos Region,Ilocos Norte,Laoag City,58000,7617,98.5,94.2,12.3,Male,Adult
+Ilocos Region,Ilocos Norte,Laoag City,53651,7617,98.5,94.2,12.3,Female,Adult
 Ilocos Region,Ilocos Norte,Batac City,55464,7821,97.8,93.5,13.5
 Ilocos Region,Ilocos Sur,Vigan City,53879,8945,98.2,94.8,11.8
 Ilocos Region,Ilocos Sur,Candon City,61432,9234,97.5,93.2,14.2

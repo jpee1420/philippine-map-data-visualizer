@@ -76,11 +76,17 @@
           />
         </div>
 
-        <!-- Hide Internal Boundaries Option -->
+        <!-- Display Options -->
         <div v-if="selectedLevel !== 'country'" class="selector-group">
-          <n-checkbox v-model:checked="hideInternalBoundaries" @update:checked="handleHideBoundaries">
-            Hide internal boundaries
-          </n-checkbox>
+          <n-text strong>Display Options</n-text>
+          <n-space vertical>
+            <n-checkbox v-model:checked="hideInternalBoundaries" @update:checked="handleHideBoundaries">
+              Hide internal boundaries
+            </n-checkbox>
+            <n-checkbox v-model:checked="showCalloutLabels" @update:checked="handleShowCallouts">
+              Show callout diagram labels
+            </n-checkbox>
+          </n-space>
         </div>
 
         <!-- Current View Info -->
@@ -109,6 +115,7 @@ const selectedCity = ref(null)
 const showProvincesInRegion = ref(false)
 const showCitiesInProvince = ref(false)
 const hideInternalBoundaries = ref(false)
+const showCalloutLabels = ref(false)
 
 // Available locations from GeoJSON
 const availableRegions = ref([])
@@ -201,6 +208,10 @@ function handleShowCities(checked) {
 
 function handleHideBoundaries(checked) {
   dataStore.setHideInternalBoundaries(checked)
+}
+
+function handleShowCallouts(checked) {
+  dataStore.setShowCalloutLabels(checked)
 }
 
 // Watch for GeoJSON data to extract available locations

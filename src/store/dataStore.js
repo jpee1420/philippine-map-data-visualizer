@@ -1,5 +1,26 @@
 import { defineStore } from 'pinia'
 
+// Region name aliases for matching GeoJSON with CSV data
+const REGION_ALIASES = {
+  'NCR': ['National Capital Region', 'NCR', 'Metro Manila'],
+  'CAR': ['Cordillera Administrative Region', 'CAR', 'Cordillera'],
+  'Ilocos Region': ['Ilocos Region', 'Region I', 'Region 1'],
+  'Cagayan Valley': ['Cagayan Valley', 'Region II', 'Region 2'],
+  'Central Luzon': ['Central Luzon', 'Region III', 'Region 3'],
+  'Calabarzon': ['CALABARZON', 'Calabarzon', 'Region IV-A', 'Region 4A'],
+  'Mimaropa': ['MIMAROPA', 'Mimaropa', 'Region IV-B', 'Region 4B'],
+  'Bicol Region': ['Bicol Region', 'Region V', 'Region 5'],
+  'Western Visayas': ['Western Visayas', 'Region VI', 'Region 6'],
+  'Central Visayas': ['Central Visayas', 'Region VII', 'Region 7'],
+  'Eastern Visayas': ['Eastern Visayas', 'Region VIII', 'Region 8'],
+  'Zamboanga Peninsula': ['Zamboanga Peninsula', 'Region IX', 'Region 9'],
+  'Northern Mindanao': ['Northern Mindanao', 'Region X', 'Region 10'],
+  'Davao Region': ['Davao Region', 'Region XI', 'Region 11'],
+  'Soccsksargen': ['SOCCSKSARGEN', 'Soccsksargen', 'Region XII', 'Region 12'],
+  'Caraga': ['Caraga', 'Region XIII', 'Region 13'],
+  'BARMM': ['BARMM', 'Bangsamoro', 'ARMM']
+}
+
 export const useDataStore = defineStore('dataStore', {
   state: () => ({
     dataset: [],
@@ -18,6 +39,7 @@ export const useDataStore = defineStore('dataStore', {
     subdivisionLevel: null, // 'provinces' or 'cities'
     parentLocation: null, // Parent location for subdivisions
     hideInternalBoundaries: false, // Hide internal boundaries
+    showCalloutLabels: false, // Show callout diagram labels on map
     colorScale: {
       min: 0,
       max: 100,
@@ -148,11 +170,38 @@ export const useDataStore = defineStore('dataStore', {
     getValueForLocation(location) {
       if (!this.selectedMetric) return null
       
-      const row = this.filteredData.find(r => 
+      // Try exact match first
+      let row = this.filteredData.find(r => 
         r.region === location || 
         r.province === location || 
         r.city === location
       )
+      
+      // If no exact match, try case-insensitive and alias matching
+      if (!row) {
+        const locationLower = location.toLowerCase()
+        row = this.filteredData.find(r => {
+          // Check if any field matches case-insensitively
+          if (r.region?.toLowerCase() === locationLower ||
+              r.province?.toLowerCase() === locationLower ||
+              r.city?.toLowerCase() === locationLower) {
+            return true
+          }
+          
+          // Check aliases
+          for (const [canonical, aliases] of Object.entries(REGION_ALIASES)) {
+            if (aliases.some(alias => alias.toLowerCase() === locationLower)) {
+              // Check if data has any of the aliases
+              return aliases.some(alias => 
+                r.region?.toLowerCase() === alias.toLowerCase() ||
+                r.province?.toLowerCase() === alias.toLowerCase() ||
+                r.city?.toLowerCase() === alias.toLowerCase()
+              )
+            }
+          }
+          return false
+        })
+      }
       
       return row ? parseFloat(row[this.selectedMetric]) : null
     },
@@ -193,6 +242,10 @@ export const useDataStore = defineStore('dataStore', {
     
     setHideInternalBoundaries(hide) {
       this.hideInternalBoundaries = hide
+    },
+    
+    setShowCalloutLabels(show) {
+      this.showCalloutLabels = show
     }
   }
 })
