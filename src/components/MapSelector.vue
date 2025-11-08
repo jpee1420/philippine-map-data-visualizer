@@ -34,13 +34,6 @@
             filterable
             @update:value="handleRegionSelect"
           />
-          
-          <!-- Show provinces within selected region -->
-          <div v-if="selectedRegion" class="sub-option">
-            <n-checkbox v-model:checked="showProvincesInRegion" @update:checked="handleShowProvinces">
-              Show provinces within {{ selectedRegion }}
-            </n-checkbox>
-          </div>
         </div>
 
         <!-- Province Selector (when provinces level is selected) -->
@@ -54,13 +47,6 @@
             filterable
             @update:value="handleProvinceSelect"
           />
-          
-          <!-- Show cities within selected province -->
-          <div v-if="selectedProvince" class="sub-option">
-            <n-checkbox v-model:checked="showCitiesInProvince" @update:checked="handleShowCities">
-              Show cities within {{ selectedProvince }}
-            </n-checkbox>
-          </div>
         </div>
 
         <!-- City Selector (when cities level is selected) -->
@@ -74,19 +60,6 @@
             filterable
             @update:value="handleCitySelect"
           />
-        </div>
-
-        <!-- Display Options -->
-        <div v-if="selectedLevel !== 'country'" class="selector-group">
-          <n-text strong>Display Options</n-text>
-          <n-space vertical>
-            <n-checkbox v-model:checked="hideInternalBoundaries" @update:checked="handleHideBoundaries">
-              Hide internal boundaries
-            </n-checkbox>
-            <n-checkbox v-model:checked="showCalloutLabels" @update:checked="handleShowCallouts">
-              Show callout diagram labels
-            </n-checkbox>
-          </n-space>
         </div>
 
         <!-- Current View Info -->
@@ -114,8 +87,6 @@ const selectedProvince = ref(null)
 const selectedCity = ref(null)
 const showProvincesInRegion = ref(false)
 const showCitiesInProvince = ref(false)
-const hideInternalBoundaries = ref(false)
-const showCalloutLabels = ref(false)
 
 // Available locations from GeoJSON
 const availableRegions = ref([])
@@ -206,14 +177,6 @@ function handleShowCities(checked) {
   }
 }
 
-function handleHideBoundaries(checked) {
-  dataStore.setHideInternalBoundaries(checked)
-}
-
-function handleShowCallouts(checked) {
-  dataStore.setShowCalloutLabels(checked)
-}
-
 // Watch for GeoJSON data to extract available locations
 watch(() => dataStore.geoData, (geoData) => {
   if (!geoData || !geoData.features) return
@@ -250,10 +213,5 @@ watch(() => dataStore.mapLevel, (level) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.sub-option {
-  margin-top: 8px;
-  padding-left: 4px;
 }
 </style>

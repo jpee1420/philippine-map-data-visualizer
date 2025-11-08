@@ -15,57 +15,9 @@ export async function loadGeoJSON(url) {
 }
 
 /**
- * Filter GeoJSON features based on criteria
+ * Calculate bounds for GeoJSON (internal helper for getCenter)
  */
-export function filterGeoJSON(geoJSON, filterFn) {
-  if (!geoJSON || !geoJSON.features) return geoJSON
-  
-  return {
-    ...geoJSON,
-    features: geoJSON.features.filter(filterFn)
-  }
-}
-
-/**
- * Get feature by property
- */
-export function findFeature(geoJSON, property, value) {
-  if (!geoJSON || !geoJSON.features) return null
-  
-  return geoJSON.features.find(feature => 
-    feature.properties && feature.properties[property] === value
-  )
-}
-
-/**
- * Merge data with GeoJSON properties
- */
-export function mergeDataWithGeoJSON(geoJSON, data, geoKey, dataKey) {
-  if (!geoJSON || !geoJSON.features) return geoJSON
-  
-  const dataMap = new Map(data.map(item => [item[dataKey], item]))
-  
-  return {
-    ...geoJSON,
-    features: geoJSON.features.map(feature => {
-      const key = feature.properties[geoKey]
-      const matchedData = dataMap.get(key)
-      
-      return {
-        ...feature,
-        properties: {
-          ...feature.properties,
-          ...matchedData
-        }
-      }
-    })
-  }
-}
-
-/**
- * Calculate bounds for GeoJSON
- */
-export function calculateBounds(geoJSON) {
+function calculateBounds(geoJSON) {
   if (!geoJSON || !geoJSON.features || geoJSON.features.length === 0) {
     return null
   }
@@ -107,65 +59,4 @@ export function getCenter(geoJSON) {
   
   const [[minLat, minLng], [maxLat, maxLng]] = bounds
   return [(minLat + maxLat) / 2, (minLng + maxLng) / 2]
-}
-
-/**
- * Simplify GeoJSON for better performance
- */
-export function simplifyGeoJSON(geoJSON, tolerance = 0.01) {
-  // This is a placeholder - in production, use a library like turf.js
-  return geoJSON
-}
-
-/**
- * Create a simple Philippine regions GeoJSON for demo
- */
-export function createDemoGeoJSON() {
-  return {
-    type: 'FeatureCollection',
-    features: [
-      {
-        type: 'Feature',
-        properties: { name: 'NCR', region: 'National Capital Region' },
-        geometry: {
-          type: 'Polygon',
-          coordinates: [[
-            [120.9, 14.7],
-            [121.1, 14.7],
-            [121.1, 14.5],
-            [120.9, 14.5],
-            [120.9, 14.7]
-          ]]
-        }
-      },
-      {
-        type: 'Feature',
-        properties: { name: 'Region I', region: 'Ilocos Region' },
-        geometry: {
-          type: 'Polygon',
-          coordinates: [[
-            [120.0, 18.0],
-            [121.0, 18.0],
-            [121.0, 16.5],
-            [120.0, 16.5],
-            [120.0, 18.0]
-          ]]
-        }
-      },
-      {
-        type: 'Feature',
-        properties: { name: 'Region III', region: 'Central Luzon' },
-        geometry: {
-          type: 'Polygon',
-          coordinates: [[
-            [120.0, 16.0],
-            [121.5, 16.0],
-            [121.5, 14.5],
-            [120.0, 14.5],
-            [120.0, 16.0]
-          ]]
-        }
-      }
-    ]
-  }
 }

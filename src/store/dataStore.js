@@ -38,6 +38,7 @@ export const useDataStore = defineStore('dataStore', {
     showSubdivisions: false, // Show subdivisions within focused location
     subdivisionLevel: null, // 'provinces' or 'cities'
     parentLocation: null, // Parent location for subdivisions
+    selectedSubdivisions: [], // Array of selected subdivisions to show boundaries
     hideInternalBoundaries: false, // Hide internal boundaries
     showCalloutLabels: false, // Show callout diagram labels on map
     colorScale: {
@@ -238,6 +239,10 @@ export const useDataStore = defineStore('dataStore', {
     
     setParentLocation(location) {
       this.parentLocation = location
+    },
+    
+    setSelectedSubdivisions(subdivisions) {
+      this.selectedSubdivisions = subdivisions
     },
     
     setHideInternalBoundaries(hide) {

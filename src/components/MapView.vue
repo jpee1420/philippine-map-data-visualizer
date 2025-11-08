@@ -21,6 +21,8 @@ const map = ref(null)
 const geoLayer = ref(null)
 const calloutLayer = ref(null)
 const loading = ref(false)
+const lastFocusZoomed = ref(null) // Track last focus that was zoomed
+const userHasMoved = ref(false) // Track if user has manually moved map after auto-fit
 
 // Initialize map
 onMounted(async () => {
@@ -33,10 +35,18 @@ onMounted(async () => {
       zoom: 6,
       zoomControl: true,
       minZoom: 5,
-      maxZoom: 12,
-      maxBounds: [[4.5, 116.0], [21.0, 127.0]], // Philippines bounds
-      maxBoundsViscosity: 1.0, // Prevent panning outside bounds
+      maxZoom: 13,
+      maxBoundsViscosity: 0.0,
       preferCanvas: true // Better performance for many features
+    })
+    
+    // Track user manual map movements to prevent unwanted auto-centering
+    map.value.on('movestart', (e) => {
+      // Only set userHasMoved if the move was initiated by user (not programmatic)
+      // Leaflet doesn't provide a direct way to detect this, so we use a flag
+      if (!map.value._programmaticMove) {
+        userHasMoved.value = true
+      }
     })
     
     console.log('Map initialized successfully')
@@ -87,13 +97,45 @@ async function loadGeoJSONData() {
   const geoData = await loadGeoJSON(geoJsonPath)
   console.log('GeoJSON loaded, features:', geoData?.features?.length)
   
-  // Filter features if a specific location is focused or showing subdivisions
+  // Filter features based on focus and selected subdivisions
   let filteredGeoData = geoData
   
-  if (dataStore.showSubdivisions && dataStore.parentLocation) {
+  if (dataStore.mapFocus && dataStore.selectedSubdivisions.length > 0) {
+    // Show parent region + selected subdivisions
+    const parentFeatures = geoData.features.filter(feature => {
+      const locationName = getLocationName(feature)
+      return locationName === dataStore.mapFocus
+    })
+    
+    // Load subdivision level GeoJSON
+    let subdivisionPath = ''
+    if (dataStore.mapLevel === 'regions') {
+      subdivisionPath = `${basePath}data/geoBoundaries-PHL-ADM2_simplified.geojson`
+    } else if (dataStore.mapLevel === 'provinces') {
+      subdivisionPath = `${basePath}data/geoBoundaries-PHL-ADM3_simplified.geojson`
+    }
+    
+    if (subdivisionPath) {
+      const subdivisionData = await loadGeoJSON(subdivisionPath)
+      const selectedSubFeatures = subdivisionData.features.filter(feature => {
+        const locationName = getLocationName(feature)
+        return dataStore.selectedSubdivisions.includes(locationName)
+      })
+      
+      // Combine parent and selected subdivisions
+      filteredGeoData = {
+        ...geoData,
+        features: [...parentFeatures, ...selectedSubFeatures]
+      }
+    } else {
+      filteredGeoData = {
+        ...geoData,
+        features: parentFeatures
+      }
+    }
+    console.log('Filtered features (parent + subdivisions):', filteredGeoData.features.length)
+  } else if (dataStore.showSubdivisions && dataStore.parentLocation) {
     // Filter to show only subdivisions within parent location
-    // This requires matching based on data - for now, show all at subdivision level
-    // In production, you'd match based on parent region/province in the data
     filteredGeoData = geoData
   } else if (dataStore.mapFocus && dataStore.mapLevel !== 'country') {
     filteredGeoData = {
@@ -143,8 +185,8 @@ function renderGeoJSON(geoData) {
       
       // Hide internal boundaries if option is enabled
       const borderWeight = dataStore.hideInternalBoundaries ? 0.5 : 1.5
-      const borderColor = dataStore.hideInternalBoundaries ? fillColor : '#ffffff'
-      const borderOpacity = dataStore.hideInternalBoundaries ? 0.3 : 1
+      const borderColor = dataStore.hideInternalBoundaries ? fillColor : '#333333'
+      const borderOpacity = dataStore.hideInternalBoundaries ? 0.3 : 0.8
       
       return {
         fillColor: fillColor,
@@ -170,11 +212,6 @@ function renderGeoJSON(geoData) {
         className: 'custom-tooltip'
       })
       
-      // Click handler
-      layer.on('click', () => {
-        console.log('Clicked:', feature.properties)
-      })
-      
       // Hover effects
       layer.on('mouseover', () => {
         layer.setStyle({
@@ -184,8 +221,9 @@ function renderGeoJSON(geoData) {
       })
       
       layer.on('mouseout', () => {
+        const borderWeight = dataStore.hideInternalBoundaries ? 0.5 : 1.5
         layer.setStyle({
-          weight: 1.5,
+          weight: borderWeight,
           fillOpacity: 0.7
         })
       })
@@ -194,11 +232,52 @@ function renderGeoJSON(geoData) {
   
   console.log('GeoJSON layer added to map')
   
-  // Fit bounds
-  if (geoData.features.length > 0) {
+  // Fit bounds when a region/province is selected and it's different from last zoomed
+  const shouldZoom = dataStore.mapFocus && 
+                     dataStore.selectedSubdivisions.length === 0 && 
+                     geoData.features.length > 0 &&
+                     lastFocusZoomed.value !== dataStore.mapFocus &&
+                     !userHasMoved.value // Don't auto-zoom if user has manually moved
+  
+  console.log('Should zoom?', shouldZoom, {
+    mapFocus: dataStore.mapFocus,
+    subdivisions: dataStore.selectedSubdivisions.length,
+    features: geoData.features.length,
+    lastZoomed: lastFocusZoomed.value,
+    userHasMoved: userHasMoved.value
+  })
+  
+  if (shouldZoom) {
     const bounds = geoLayer.value.getBounds()
-    console.log('Fitting bounds:', bounds)
-    map.value.fitBounds(bounds)
+    console.log('Fitting bounds for selection:', dataStore.mapFocus)
+    console.log('Bounds:', bounds)
+    
+    // Calculate appropriate zoom based on bounds size
+    const boundsSize = bounds.getNorthEast().distanceTo(bounds.getSouthWest())
+    const maxZoom = boundsSize < 100000 ? 11 : 10 // Higher zoom for smaller areas
+    
+    console.log('Bounds size:', boundsSize, 'Max zoom:', maxZoom)
+    
+    // Use setTimeout to ensure layer is fully rendered
+    setTimeout(() => {
+      // Mark this as a programmatic move to avoid setting userHasMoved flag
+      map.value._programmaticMove = true
+      
+      map.value.fitBounds(bounds, {
+        padding: [50, 50],
+        maxZoom: maxZoom,
+        animate: true,
+        duration: 0.5
+      })
+      
+      // Reset the flag after animation completes
+      setTimeout(() => {
+        map.value._programmaticMove = false
+      }, 600)
+      
+      console.log('fitBounds executed for:', dataStore.mapFocus)
+      lastFocusZoomed.value = dataStore.mapFocus
+    }, 50)
   }
   
   // Render callout labels if enabled
@@ -383,28 +462,46 @@ function getLocationName(feature) {
          'Unknown'
 }
 
-// Watch for data changes
-watch(() => dataStore.filteredData, () => {
-  if (dataStore.geoData) {
-    renderGeoJSON(dataStore.geoData)
+// Helper function to update layer colors
+function updateLayerColors() {
+  if (dataStore.geoData && geoLayer.value) {
+    geoLayer.value.eachLayer((layer) => {
+      if (layer.feature) {
+        const locationName = getLocationName(layer.feature)
+        const value = dataStore.getValueForLocation(locationName)
+        const fillColor = dataStore.getColorForValue(value)
+        layer.setStyle({ fillColor })
+      }
+    })
   }
-})
+}
 
-watch(() => dataStore.selectedMetric, () => {
-  if (dataStore.geoData) {
-    renderGeoJSON(dataStore.geoData)
-  }
-})
+// Watch for data changes - only re-render colors, don't reload GeoJSON
+watch(() => dataStore.filteredData, updateLayerColors)
+watch(() => dataStore.selectedMetric, updateLayerColors)
 
 // Watch for map level changes to reload appropriate GeoJSON
 watch(() => dataStore.mapLevel, async () => {
+  console.log('Map level changed to:', dataStore.mapLevel)
   await loadGeoJSONData()
 })
 
 // Watch for map focus changes to filter features
-watch(() => dataStore.mapFocus, async () => {
+watch(() => dataStore.mapFocus, async (newFocus, oldFocus) => {
+  console.log('Map focus changed:', oldFocus, '->', newFocus)
+  // Reset flags when focus changes to allow auto-zoom on new selection
+  if (newFocus !== oldFocus) {
+    lastFocusZoomed.value = null
+    userHasMoved.value = false // Reset to allow auto-zoom on new selection
+  }
   await loadGeoJSONData()
 })
+
+// Watch for selected subdivisions changes
+watch(() => dataStore.selectedSubdivisions, async () => {
+  console.log('Selected subdivisions changed:', dataStore.selectedSubdivisions)
+  await loadGeoJSONData()
+}, { deep: true })
 
 // Watch for subdivision changes
 watch(() => dataStore.showSubdivisions, async () => {
@@ -425,15 +522,39 @@ watch(() => dataStore.showCalloutLabels, () => {
   }
 })
 
+// Watch for color scale changes to update map immediately
+watch(() => dataStore.colorScale, () => {
+  if (dataStore.geoData) {
+    renderGeoJSON(dataStore.geoData)
+  }
+}, { deep: true })
+
 // Watch for zoom changes to update callout sizes
 watch(() => map.value, (newMap) => {
   if (newMap) {
     newMap.on('zoomend', () => {
       if (dataStore.showCalloutLabels) {
-        renderCalloutLabels()
+        // Add small delay to ensure zoom animation completes
+        setTimeout(() => {
+          renderCalloutLabels()
+        }, 150)
       }
     })
   }
+}, { immediate: true })
+
+// Expose recenter method
+const recenterMap = () => {
+  if (map.value) {
+    setTimeout(() => {
+      map.value.invalidateSize()
+      map.value.setView([12.8797, 121.7740], map.value.getZoom())
+    }, 100)
+  }
+}
+
+defineExpose({
+  recenterMap
 })
 </script>
 
