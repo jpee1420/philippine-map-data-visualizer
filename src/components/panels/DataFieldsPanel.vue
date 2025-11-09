@@ -31,90 +31,30 @@
         <div class="section-label">Map Configuration</div>
         
         <div class="config-item">
-          <label>Region Name</label>
-          <div 
-            class="drop-zone"
-            :class="{ 'has-value': regionField }"
-            @drop="handleDrop('region', $event)"
-            @dragover.prevent
-            @dragenter.prevent
-          >
-            <n-icon v-if="!regionField" :component="AddIcon" size="16" />
-            <span>{{ regionField || 'Drop field here' }}</span>
-            <n-button 
-              v-if="regionField" 
-              text 
-              size="tiny"
-              @click="clearField('region')"
-            >
-              <n-icon :component="CloseIcon" size="14" />
-            </n-button>
-          </div>
+          <label>Value Metrics (Select Multiple)</label>
+          <n-select
+            v-model:value="selectedMetrics"
+            :options="metricOptions"
+            multiple
+            filterable
+            placeholder="Select metrics to display"
+            size="small"
+            @update:value="handleMetricsChange"
+          />
         </div>
         
         <div class="config-item">
-          <label>Latitude</label>
-          <div 
-            class="drop-zone"
-            :class="{ 'has-value': latitudeField }"
-            @drop="handleDrop('latitude', $event)"
-            @dragover.prevent
-            @dragenter.prevent
-          >
-            <n-icon v-if="!latitudeField" :component="AddIcon" size="16" />
-            <span>{{ latitudeField || 'Drop field here' }}</span>
-            <n-button 
-              v-if="latitudeField" 
-              text 
-              size="tiny"
-              @click="clearField('latitude')"
-            >
-              <n-icon :component="CloseIcon" size="14" />
-            </n-button>
-          </div>
-        </div>
-        
-        <div class="config-item">
-          <label>Longitude</label>
-          <div 
-            class="drop-zone"
-            :class="{ 'has-value': longitudeField }"
-            @drop="handleDrop('longitude', $event)"
-            @dragover.prevent
-            @dragenter.prevent
-          >
-            <n-icon v-if="!longitudeField" :component="AddIcon" size="16" />
-            <span>{{ longitudeField || 'Drop field here' }}</span>
-            <n-button 
-              v-if="longitudeField" 
-              text 
-              size="tiny"
-              @click="clearField('longitude')"
-            >
-              <n-icon :component="CloseIcon" size="14" />
-            </n-button>
-          </div>
-        </div>
-        
-        <div class="config-item">
-          <label>Value (Metric)</label>
-          <div 
-            class="drop-zone"
-            :class="{ 'has-value': valueField }"
-            @drop="handleDrop('value', $event)"
-            @dragover.prevent
-            @dragenter.prevent
-          >
-            <n-icon v-if="!valueField" :component="AddIcon" size="16" />
-            <span>{{ valueField || 'Drop field here' }}</span>
-            <n-button 
-              v-if="valueField" 
-              text 
-              size="tiny"
-              @click="clearField('value')"
-            >
-              <n-icon :component="CloseIcon" size="14" />
-            </n-button>
+          <label>Legend (Category)</label>
+          <n-select
+            v-model:value="legendField"
+            :options="dimensionOptions"
+            placeholder="Select category field"
+            size="small"
+            clearable
+            @update:value="handleLegendChange"
+          />
+          <div v-if="legendField" class="field-hint">
+            Groups data by {{ legendField }} (e.g., gender, nationality)
           </div>
         </div>
         
@@ -134,19 +74,19 @@
         <div class="stats-grid">
           <div class="stat-item">
             <span class="stat-label">Min</span>
-            <span class="stat-value">{{ stats.min.toFixed(2) }}</span>
+            <span class="stat-value">{{ formatNumber(stats.min) }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">Max</span>
-            <span class="stat-value">{{ stats.max.toFixed(2) }}</span>
+            <span class="stat-value">{{ formatNumber(stats.max) }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">Avg</span>
-            <span class="stat-value">{{ stats.avg.toFixed(2) }}</span>
+            <span class="stat-value">{{ formatNumber(stats.avg) }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">Total</span>
-            <span class="stat-value">{{ stats.sum.toFixed(2) }}</span>
+            <span class="stat-value">{{ formatNumber(stats.sum) }}</span>
           </div>
         </div>
       </div>
@@ -155,23 +95,64 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { NIcon, NTag, NButton, NSelect } from 'naive-ui'
+import { ref, computed, watch } from 'vue'
+import { NIcon, NTag, NButton, NSelect, NInput } from 'naive-ui'
 import { Layers as LayersIcon, Menu as MenuIcon, Add as AddIcon, Close as CloseIcon } from '@vicons/ionicons5'
 import { useDataStore } from '@/store/dataStore'
 
 const dataStore = useDataStore()
 
 // Map configuration fields
-const regionField = ref(null)
-const latitudeField = ref(null)
-const longitudeField = ref(null)
-const valueField = computed({
-  get: () => dataStore.selectedMetric,
-  set: (value) => dataStore.setSelectedMetric(value)
+const selectedMetrics = ref([])
+const legendField = ref(null)
+
+// Computed metric options from available fields
+const metricOptions = computed(() => {
+  return availableFields.value
+    .filter(field => field.type === 'Mea')
+    .map(field => ({
+      label: field.name,
+      value: field.name
+    }))
 })
 
-const colorScheme = ref('default')
+// Computed dimension options for legend (categorical fields)
+const dimensionOptions = computed(() => {
+  return availableFields.value
+    .filter(field => field.type === 'Dim')
+    .map(field => ({
+      label: field.name,
+      value: field.name
+    }))
+})
+
+// Handle metrics change
+const handleMetricsChange = (metrics) => {
+  // Update selected metrics array in store
+  dataStore.selectedMetrics = metrics || []
+  
+  if (metrics && metrics.length > 0) {
+    // Set the first metric as the primary one for coloring
+    dataStore.setSelectedMetric(metrics[0])
+  } else {
+    dataStore.setSelectedMetric(null)
+  }
+}
+
+// Handle legend field change
+const handleLegendChange = (field) => {
+  dataStore.legendField = field
+  
+  // If legend field is set, extract unique categories
+  if (field && dataStore.dataset.length > 0) {
+    const categories = [...new Set(dataStore.dataset.map(row => row[field]).filter(Boolean))]
+    dataStore.legendCategories = categories
+  } else {
+    dataStore.legendCategories = []
+  }
+}
+
+const colorScheme = ref('blue')
 
 const colorSchemeOptions = [
   { label: 'Default (Red)', value: 'default' },
@@ -182,8 +163,6 @@ const colorSchemeOptions = [
 ]
 
 // Watch for color scheme changes and update store
-import { watch } from 'vue'
-
 watch(colorScheme, (newScheme) => {
   const colorMaps = {
     'default': ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15'],
@@ -231,43 +210,15 @@ const handleDragStart = (field, event) => {
   event.dataTransfer.setData('field', JSON.stringify(field))
 }
 
-const handleDrop = (target, event) => {
-  event.preventDefault()
-  const fieldData = JSON.parse(event.dataTransfer.getData('field'))
+// Number formatting with comma separators
+const formatNumber = (num) => {
+  if (num === null || num === undefined || isNaN(num)) return '0'
   
-  switch(target) {
-    case 'region':
-      regionField.value = fieldData.name
-      break
-    case 'latitude':
-      latitudeField.value = fieldData.name
-      break
-    case 'longitude':
-      longitudeField.value = fieldData.name
-      break
-    case 'value':
-      if (fieldData.type === 'Mea') {
-        dataStore.setSelectedMetric(fieldData.name)
-      }
-      break
-  }
-}
-
-const clearField = (target) => {
-  switch(target) {
-    case 'region':
-      regionField.value = null
-      break
-    case 'latitude':
-      latitudeField.value = null
-      break
-    case 'longitude':
-      longitudeField.value = null
-      break
-    case 'value':
-      dataStore.setSelectedMetric(null)
-      break
-  }
+  // Format with 2 decimal places and add comma separators
+  return num.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
 }
 </script>
 
@@ -440,5 +391,12 @@ const clearField = (target) => {
 
 .panel-content::-webkit-scrollbar-thumb:hover {
   background: #b0b0b0;
+}
+
+.field-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #666;
+  font-style: italic;
 }
 </style>

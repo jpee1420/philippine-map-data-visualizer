@@ -4,6 +4,7 @@
     <FilterBar />
     <div class="map-container">
       <MapView ref="mapViewRef" />
+      <Legend />
     </div>
   </div>
 </template>
@@ -14,7 +15,6 @@ import { NButton, NButtonGroup, NIcon } from 'naive-ui'
 import { Search as SearchIcon, Expand as ExpandIcon } from '@vicons/ionicons5'
 import MapView from '@/components/MapView.vue'
 import Legend from '@/components/Legend.vue'
-import MapBox from '@/components/MapView_Mapbox.vue'
 import FilterBar from '@/components/common/FilterBar.vue'
 
 const zoomLevel = ref(100)

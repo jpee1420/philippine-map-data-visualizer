@@ -1,24 +1,76 @@
 import { defineStore } from 'pinia'
 
 // Region name aliases for matching GeoJSON with CSV data
+// Maps canonical region name to all possible variations
 const REGION_ALIASES = {
-  'NCR': ['National Capital Region', 'NCR', 'Metro Manila'],
-  'CAR': ['Cordillera Administrative Region', 'CAR', 'Cordillera'],
-  'Ilocos Region': ['Ilocos Region', 'Region I', 'Region 1'],
-  'Cagayan Valley': ['Cagayan Valley', 'Region II', 'Region 2'],
-  'Central Luzon': ['Central Luzon', 'Region III', 'Region 3'],
-  'Calabarzon': ['CALABARZON', 'Calabarzon', 'Region IV-A', 'Region 4A'],
-  'Mimaropa': ['MIMAROPA', 'Mimaropa', 'Region IV-B', 'Region 4B'],
-  'Bicol Region': ['Bicol Region', 'Region V', 'Region 5'],
-  'Western Visayas': ['Western Visayas', 'Region VI', 'Region 6'],
-  'Central Visayas': ['Central Visayas', 'Region VII', 'Region 7'],
-  'Eastern Visayas': ['Eastern Visayas', 'Region VIII', 'Region 8'],
-  'Zamboanga Peninsula': ['Zamboanga Peninsula', 'Region IX', 'Region 9'],
-  'Northern Mindanao': ['Northern Mindanao', 'Region X', 'Region 10'],
-  'Davao Region': ['Davao Region', 'Region XI', 'Region 11'],
-  'Soccsksargen': ['SOCCSKSARGEN', 'Soccsksargen', 'Region XII', 'Region 12'],
-  'Caraga': ['Caraga', 'Region XIII', 'Region 13'],
-  'BARMM': ['BARMM', 'Bangsamoro', 'ARMM']
+  'National Capital Region': [
+    'National Capital Region', 'NCR', 'Metro Manila', 'Manila', 
+    'Region NCR', 'Region 13', 'Region XIII'
+  ],
+  'Cordillera Administrative Region': [
+    'Cordillera Administrative Region', 'CAR', 'Cordillera', 
+    'Region CAR', 'Cordilleras'
+  ],
+  'Ilocos Region': [
+    'Ilocos Region', 'Ilocos', 'Region I', 'Region 1', 'R1', 
+    'Region 01', 'REG1', 'REG I'
+  ],
+  'Cagayan Valley': [
+    'Cagayan Valley', 'Region II', 'Region 2', 'R2', 
+    'Region 02', 'REG2', 'REG II'
+  ],
+  'Central Luzon': [
+    'Central Luzon', 'Region III', 'Region 3', 'R3', 
+    'Region 03', 'REG3', 'REG III'
+  ],
+  'Calabarzon': [
+    'CALABARZON', 'Calabarzon', 'Region IV-A', 'Region 4A', 'Region IVA',
+    'Region 4-A', 'R4A', 'R4-A', 'REG4A', 'REG IV-A'
+  ],
+  'Mimaropa': [
+    'MIMAROPA', 'Mimaropa', 'Region IV-B', 'Region 4B', 'Region IVB',
+    'Region 4-B', 'R4B', 'R4-B', 'REG4B', 'REG IV-B', 'Southwestern Tagalog Region'
+  ],
+  'Bicol Region': [
+    'Bicol Region', 'Bicol', 'Region V', 'Region 5', 'R5', 
+    'Region 05', 'REG5', 'REG V', 'Bicolandia'
+  ],
+  'Western Visayas': [
+    'Western Visayas', 'Region VI', 'Region 6', 'R6', 
+    'Region 06', 'REG6', 'REG VI'
+  ],
+  'Central Visayas': [
+    'Central Visayas', 'Region VII', 'Region 7', 'R7', 
+    'Region 07', 'REG7', 'REG VII'
+  ],
+  'Eastern Visayas': [
+    'Eastern Visayas', 'Region VIII', 'Region 8', 'R8', 
+    'Region 08', 'REG8', 'REG VIII'
+  ],
+  'Zamboanga Peninsula': [
+    'Zamboanga Peninsula', 'Zamboanga', 'Region IX', 'Region 9', 'R9', 
+    'Region 09', 'REG9', 'REG IX'
+  ],
+  'Northern Mindanao': [
+    'Northern Mindanao', 'Region X', 'Region 10', 'R10', 
+    'REG10', 'REG X'
+  ],
+  'Davao Region': [
+    'Davao Region', 'Davao', 'Region XI', 'Region 11', 'R11', 
+    'REG11', 'REG XI'
+  ],
+  'Soccsksargen': [
+    'SOCCSKSARGEN', 'Soccsksargen', 'SOCCKSARGEN', 'Region XII', 'Region 12', 'R12', 
+    'REG12', 'REG XII', 'South Cotabato-Cotabato-Sultan Kudarat-Sarangani-General Santos'
+  ],
+  'Caraga': [
+    'Caraga', 'CARAGA', 'Region XIII', 'Region 13', 'R13', 
+    'REG13', 'REG XIII'
+  ],
+  'Bangsamoro Autonomous Region in Muslim Mindanao': [
+    'BARMM', 'Bangsamoro', 'Bangsamoro Autonomous Region in Muslim Mindanao',
+    'ARMM', 'Autonomous Region in Muslim Mindanao', 'Muslim Mindanao'
+  ]
 }
 
 export const useDataStore = defineStore('dataStore', {
@@ -27,6 +79,9 @@ export const useDataStore = defineStore('dataStore', {
     filteredData: [],
     geoData: null,
     selectedMetric: null,
+    selectedMetrics: [], // Array of selected metrics for multi-metric display
+    legendField: null, // Categorical field for legend (e.g., gender, nationality)
+    legendCategories: [], // Unique categories from legend field
     filters: { 
       region: null, 
       province: null, 
@@ -44,7 +99,7 @@ export const useDataStore = defineStore('dataStore', {
     colorScale: {
       min: 0,
       max: 100,
-      colors: ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15']
+      colors: ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c'] // Default to blue
     }
   }),
   
@@ -168,9 +223,8 @@ export const useDataStore = defineStore('dataStore', {
       this.colorScale.max = stats.max
     },
     
-    getValueForLocation(location) {
-      if (!this.selectedMetric) return null
-      
+    // Helper to find data row by location name with alias matching
+    findRowByLocation(location) {
       // Try exact match first
       let row = this.filteredData.find(r => 
         r.region === location || 
@@ -180,30 +234,52 @@ export const useDataStore = defineStore('dataStore', {
       
       // If no exact match, try case-insensitive and alias matching
       if (!row) {
-        const locationLower = location.toLowerCase()
+        const locationLower = location.toLowerCase().trim()
         row = this.filteredData.find(r => {
+          const regionLower = r.region?.toLowerCase().trim()
+          const provinceLower = r.province?.toLowerCase().trim()
+          const cityLower = r.city?.toLowerCase().trim()
+          
           // Check if any field matches case-insensitively
-          if (r.region?.toLowerCase() === locationLower ||
-              r.province?.toLowerCase() === locationLower ||
-              r.city?.toLowerCase() === locationLower) {
+          if (regionLower === locationLower ||
+              provinceLower === locationLower ||
+              cityLower === locationLower) {
             return true
           }
           
-          // Check aliases
+          // Check if location (from GeoJSON) matches any alias of data fields
           for (const [canonical, aliases] of Object.entries(REGION_ALIASES)) {
-            if (aliases.some(alias => alias.toLowerCase() === locationLower)) {
-              // Check if data has any of the aliases
-              return aliases.some(alias => 
-                r.region?.toLowerCase() === alias.toLowerCase() ||
-                r.province?.toLowerCase() === alias.toLowerCase() ||
-                r.city?.toLowerCase() === alias.toLowerCase()
-              )
+            const aliasesLower = aliases.map(a => a.toLowerCase().trim())
+            
+            // If the GeoJSON location matches any alias
+            if (aliasesLower.includes(locationLower)) {
+              // Check if the data row has any matching alias
+              if (aliasesLower.includes(regionLower) ||
+                  aliasesLower.includes(provinceLower) ||
+                  aliasesLower.includes(cityLower)) {
+                return true
+              }
+            }
+            
+            // If the data row matches any alias, check if location is also in that alias group
+            if (aliasesLower.includes(regionLower) ||
+                aliasesLower.includes(provinceLower) ||
+                aliasesLower.includes(cityLower)) {
+              if (aliasesLower.includes(locationLower)) {
+                return true
+              }
             }
           }
           return false
         })
       }
       
+      return row
+    },
+    
+    getValueForLocation(location) {
+      if (!this.selectedMetric) return null
+      const row = this.findRowByLocation(location)
       return row ? parseFloat(row[this.selectedMetric]) : null
     },
     

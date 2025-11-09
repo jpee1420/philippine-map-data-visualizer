@@ -122,24 +122,32 @@ watch([() => dataStore.mapLevel, () => dataStore.mapFocus], async ([level, focus
       hierarchicalFilterItems.value = provinces
     }
     
-    // For provinces level, load from GeoJSON  
+    // For provinces level, load cities from user's dataset
     if (level === 'provinces') {
       const items = new Set()
-      const basePath = import.meta.env.BASE_URL || '/'
-      const response = await fetch(`${basePath}data/geoBoundaries-PHL-ADM3_simplified.geojson`)
-      const geoData = await response.json()
       
-      // Since we don't have properties, we'll load all cities/municipalities for now
-      // This will need the CSV data to properly filter by province
+      console.log('Loading cities for province:', focus)
+      
+      // Get cities from user's dataset that belong to this province
       if (dataStore.dataset && dataStore.dataset.length > 0) {
         dataStore.dataset.forEach(row => {
-          if (row.province === focus && row.city) {
-            items.add(row.city)
+          // Match province using alias-aware matching
+          const rowProvince = row.province
+          if (rowProvince) {
+            // Check if row's province matches the focused province
+            const matchesExact = rowProvince === focus
+            const matchesLower = rowProvince.toLowerCase().trim() === focus.toLowerCase().trim()
+            
+            if ((matchesExact || matchesLower) && row.city) {
+              items.add(row.city)
+            }
           }
         })
       }
       
+      console.log('Cities found in dataset for', focus, ':', items.size)
       hierarchicalFilterItems.value = Array.from(items).sort()
+      console.log('Final city list:', hierarchicalFilterItems.value)
     }
   } catch (error) {
     console.error('Error loading hierarchical items:', error)

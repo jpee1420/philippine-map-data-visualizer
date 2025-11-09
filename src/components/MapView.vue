@@ -101,26 +101,54 @@ async function loadGeoJSONData() {
   let filteredGeoData = geoData
   
   if (dataStore.mapFocus && dataStore.selectedSubdivisions.length > 0) {
-    // Show parent region + selected subdivisions
+    // Show parent region/province + selected subdivisions
+    console.log('Loading subdivisions for:', dataStore.mapFocus)
+    console.log('Selected subdivisions:', dataStore.selectedSubdivisions)
+    console.log('Current map level:', dataStore.mapLevel)
+    
     const parentFeatures = geoData.features.filter(feature => {
       const locationName = getLocationName(feature)
       return locationName === dataStore.mapFocus
     })
     
+    console.log('Parent features found:', parentFeatures.length)
+    
     // Load subdivision level GeoJSON
     let subdivisionPath = ''
     if (dataStore.mapLevel === 'regions') {
       subdivisionPath = `${basePath}data/geoBoundaries-PHL-ADM2_simplified.geojson`
+      console.log('Loading provinces (ADM2) for region')
     } else if (dataStore.mapLevel === 'provinces') {
       subdivisionPath = `${basePath}data/geoBoundaries-PHL-ADM3_simplified.geojson`
+      console.log('Loading cities (ADM3) for province')
     }
     
     if (subdivisionPath) {
       const subdivisionData = await loadGeoJSON(subdivisionPath)
+      console.log('Subdivision data loaded, total features:', subdivisionData.features.length)
+      
       const selectedSubFeatures = subdivisionData.features.filter(feature => {
         const locationName = getLocationName(feature)
-        return dataStore.selectedSubdivisions.includes(locationName)
+        
+        // Check exact match first
+        let isSelected = dataStore.selectedSubdivisions.includes(locationName)
+        
+        // If not found, try normalized matching (remove "City" suffix)
+        if (!isSelected) {
+          const normalizedLocation = locationName.replace(/\s+City$/i, '').trim()
+          isSelected = dataStore.selectedSubdivisions.some(selected => {
+            const normalizedSelected = selected.replace(/\s+City$/i, '').trim()
+            return normalizedLocation.toLowerCase() === normalizedSelected.toLowerCase()
+          })
+        }
+        
+        if (isSelected) {
+          console.log('Found selected subdivision:', locationName)
+        }
+        return isSelected
       })
+      
+      console.log('Selected subdivision features found:', selectedSubFeatures.length)
       
       // Combine parent and selected subdivisions
       filteredGeoData = {
@@ -133,7 +161,7 @@ async function loadGeoJSONData() {
         features: parentFeatures
       }
     }
-    console.log('Filtered features (parent + subdivisions):', filteredGeoData.features.length)
+    console.log('Total filtered features (parent + subdivisions):', filteredGeoData.features.length)
   } else if (dataStore.showSubdivisions && dataStore.parentLocation) {
     // Filter to show only subdivisions within parent location
     filteredGeoData = geoData
@@ -180,8 +208,19 @@ function renderGeoJSON(geoData) {
       }
       
       const locationName = getLocationName(feature)
-      const value = dataStore.getValueForLocation(locationName)
-      const fillColor = dataStore.getColorForValue(value)
+      let fillColor
+      
+      // If legend field is set, color by category
+      if (dataStore.legendField && dataStore.legendCategories.length > 0) {
+        const row = dataStore.findRowByLocation(locationName)
+        const categoryValue = row ? row[dataStore.legendField] : null
+        const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
+        fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
+      } else {
+        // Otherwise, color by metric value
+        const value = dataStore.getValueForLocation(locationName)
+        fillColor = dataStore.getColorForValue(value)
+      }
       
       // Hide internal boundaries if option is enabled
       const borderWeight = dataStore.hideInternalBoundaries ? 0.5 : 1.5
@@ -198,13 +237,30 @@ function renderGeoJSON(geoData) {
     },
     onEachFeature: (feature, layer) => {
       const locationName = getLocationName(feature)
-      const value = dataStore.getValueForLocation(locationName)
       
-      // Tooltip
-      const tooltipContent = `<strong>${locationName}</strong><br/>` +
-        (value !== null && dataStore.selectedMetric ? 
-          `${dataStore.selectedMetric}: ${value.toFixed(2)}` : 
-          'No data available')
+      // Build tooltip with multiple metrics if available
+      let tooltipContent = `<strong>${locationName}</strong><br/>`
+      
+      if (dataStore.selectedMetrics && dataStore.selectedMetrics.length > 0) {
+        // Show all selected metrics using alias-aware matching
+        const row = dataStore.findRowByLocation(locationName)
+        
+        if (row) {
+          const metricLines = dataStore.selectedMetrics.map(metric => {
+            const value = parseFloat(row[metric])
+            const formattedValue = value !== null && !isNaN(value) 
+              ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              : 'N/A'
+            return `${metric}: ${formattedValue}`
+          }).join('<br/>')
+          
+          tooltipContent += metricLines
+        } else {
+          tooltipContent += 'No data available'
+        }
+      } else {
+        tooltipContent += 'No data available'
+      }
       
       layer.bindTooltip(tooltipContent, { 
         permanent: false, 
@@ -462,14 +518,37 @@ function getLocationName(feature) {
          'Unknown'
 }
 
+// Category colors for legend field (same as Legend component)
+const categoryColors = [
+  '#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a',
+  '#fee140', '#30cfd0', '#a8edea', '#fbc2eb', '#fdcbf1',
+  '#e0c3fc', '#8ec5fc', '#f5576c', '#ffa751', '#4facfe'
+]
+
+function getCategoryColor(index) {
+  return categoryColors[index % categoryColors.length]
+}
+
 // Helper function to update layer colors
 function updateLayerColors() {
   if (dataStore.geoData && geoLayer.value) {
     geoLayer.value.eachLayer((layer) => {
       if (layer.feature) {
         const locationName = getLocationName(layer.feature)
-        const value = dataStore.getValueForLocation(locationName)
-        const fillColor = dataStore.getColorForValue(value)
+        let fillColor
+        
+        // If legend field is set, color by category
+        if (dataStore.legendField && dataStore.legendCategories.length > 0) {
+          const row = dataStore.findRowByLocation(locationName)
+          const categoryValue = row ? row[dataStore.legendField] : null
+          const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
+          fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
+        } else {
+          // Otherwise, color by metric value
+          const value = dataStore.getValueForLocation(locationName)
+          fillColor = dataStore.getColorForValue(value)
+        }
+        
         layer.setStyle({ fillColor })
       }
     })
@@ -479,6 +558,8 @@ function updateLayerColors() {
 // Watch for data changes - only re-render colors, don't reload GeoJSON
 watch(() => dataStore.filteredData, updateLayerColors)
 watch(() => dataStore.selectedMetric, updateLayerColors)
+watch(() => dataStore.legendField, updateLayerColors)
+watch(() => dataStore.legendCategories, updateLayerColors, { deep: true })
 
 // Watch for map level changes to reload appropriate GeoJSON
 watch(() => dataStore.mapLevel, async () => {
