@@ -97,7 +97,22 @@ async function handleFileUpload({ file, onFinish, onError }) {
     loading.value = true
     errorMessage.value = ''
     
+    console.log('📁 Importing file:', file.file.name)
     const data = await parseFile(file.file)
+    console.log('✅ Parsed data:', data.length, 'rows')
+    
+    // Log first row to see structure
+    if (data.length > 0) {
+      console.log('📊 First row sample:', data[0])
+      console.log('📋 Column names:', Object.keys(data[0]))
+      
+      // Check for location columns
+      const hasRegion = data[0].hasOwnProperty('region')
+      const hasProvince = data[0].hasOwnProperty('province')
+      const hasCity = data[0].hasOwnProperty('city')
+      console.log('🗺️ Location columns found:', { hasRegion, hasProvince, hasCity })
+    }
+    
     validateData(data)
     
     dataStore.setDataset(data)
@@ -105,6 +120,7 @@ async function handleFileUpload({ file, onFinish, onError }) {
     
     onFinish()
   } catch (error) {
+    console.error('❌ Import error:', error)
     errorMessage.value = error.message
     onError()
   } finally {

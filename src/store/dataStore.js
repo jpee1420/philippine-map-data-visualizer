@@ -284,7 +284,8 @@ export const useDataStore = defineStore('dataStore', {
     },
     
     getColorForValue(value) {
-      if (value === null || value === undefined) return '#cccccc'
+      // Return white for boundaries with no data
+      if (value === null || value === undefined || isNaN(value)) return '#ffffff'
       
       const { min, max, colors } = this.colorScale
       const normalized = (value - min) / (max - min || 1)
