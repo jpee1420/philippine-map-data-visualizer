@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "annotate:psgc": "node ./scripts/annotate_psgc.js",
+    "annotate:psgc:inplace": "node ./scripts/annotate_psgc.js --in-place"
   },
   "dependencies": {
     "@vicons/ionicons5": "^0.12.0",

@@ -73,6 +73,49 @@ const REGION_ALIASES = {
   ]
 }
 
+// Normalize dataset headers so region/province/city are recognized regardless of case or variants
+function _normalizeKey(raw) {
+  return String(raw || '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '') // remove spaces, slashes, underscores, hyphens, etc.
+}
+
+const HEADER_ALIASES = {
+  region: new Set(['region', 'regionname', 'reg']),
+  province: new Set(['province', 'provincename', 'prov']),
+  city: new Set([
+    'city', 'cityname', 'municipality', 'municipal', 'municipalname',
+    'cities', 'municipalities', 'citymunicipality', 'citiesmunicipalities',
+    'citymunicipalityname', 'citiesandmunicipalities', 'cityandmunicipality',
+    'citymunicipal', 'mun', 'municity'
+  ])
+}
+
+function normalizeDatasetColumns(data) {
+  if (!Array.isArray(data) || data.length === 0) return data
+  const sample = data[0]
+  const keys = Object.keys(sample)
+
+  const keyMap = {}
+  keys.forEach(k => {
+    const nk = _normalizeKey(k)
+    for (const [canon, set] of Object.entries(HEADER_ALIASES)) {
+      if (set.has(nk) && !keyMap[canon]) {
+        keyMap[canon] = k
+      }
+    }
+  })
+
+  // Return new dataset with canonical fields added if missing
+  return data.map(row => {
+    const newRow = { ...row }
+    if (keyMap.region !== undefined && newRow.region === undefined) newRow.region = row[keyMap.region]
+    if (keyMap.province !== undefined && newRow.province === undefined) newRow.province = row[keyMap.province]
+    if (keyMap.city !== undefined && newRow.city === undefined) newRow.city = row[keyMap.city]
+    return newRow
+  })
+}
+
 export const useDataStore = defineStore('dataStore', {
   state: () => ({
     dataset: [],
@@ -154,7 +197,8 @@ export const useDataStore = defineStore('dataStore', {
   
   actions: {
     setDataset(data) {
-      this.dataset = data
+      // Normalize headers so we always have region/province/city fields regardless of input casing
+      this.dataset = normalizeDatasetColumns(data)
       this.detectMetrics()
       this.applyFilters()
     },
@@ -284,8 +328,7 @@ export const useDataStore = defineStore('dataStore', {
     },
     
     getColorForValue(value) {
-      // Return white for boundaries with no data
-      if (value === null || value === undefined || isNaN(value)) return '#ffffff'
+      if (value === null || value === undefined) return '#cccccc'
       
       const { min, max, colors } = this.colorScale
       const normalized = (value - min) / (max - min || 1)

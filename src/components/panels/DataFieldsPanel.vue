@@ -6,25 +6,6 @@
     </div>
     
     <div class="panel-content">
-      <!-- Available Fields -->
-      <div class="fields-section">
-        <div class="section-label">Available Fields</div>
-        <div class="fields-list">
-          <div 
-            v-for="field in availableFields" 
-            :key="field.name"
-            class="field-item"
-            draggable="true"
-            @dragstart="handleDragStart(field, $event)"
-          >
-            <n-icon :component="MenuIcon" size="16" class="drag-handle" />
-            <span class="field-name">{{ field.name }}</span>
-            <n-tag :type="field.type === 'Dim' ? 'info' : 'success'" size="small">
-              {{ field.type }}
-            </n-tag>
-          </div>
-        </div>
-      </div>
       
       <!-- Map Configuration -->
       <div class="fields-section">
@@ -107,8 +88,8 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { NIcon, NTag, NButton, NSelect, NInput, NSwitch } from 'naive-ui'
-import { Layers as LayersIcon, Menu as MenuIcon, Add as AddIcon, Close as CloseIcon } from '@vicons/ionicons5'
+import { NIcon, NSelect, NSwitch } from 'naive-ui'
+import { Layers as LayersIcon } from '@vicons/ionicons5'
 import { useDataStore } from '@/store/dataStore'
 
 const dataStore = useDataStore()
@@ -118,24 +99,25 @@ const selectedMetrics = ref([])
 const legendField = ref(null)
 const showCallouts = ref(dataStore.showCalloutLabels)
 
-// Computed metric options from available fields
+// Metric options from store-detected metrics
 const metricOptions = computed(() => {
-  return availableFields.value
-    .filter(field => field.type === 'Mea')
-    .map(field => ({
-      label: field.name,
-      value: field.name
-    }))
+  return (dataStore.availableMetrics || []).map(name => ({ label: name, value: name }))
 })
 
-// Computed dimension options for legend (categorical fields)
+// Dimension options for legend (non-numeric columns excluding region/province/city)
 const dimensionOptions = computed(() => {
-  return availableFields.value
-    .filter(field => field.type === 'Dim')
-    .map(field => ({
-      label: field.name,
-      value: field.name
-    }))
+  if (!dataStore.dataset || dataStore.dataset.length === 0) return []
+  const exclude = new Set(['region','province','city'])
+  const sampleRows = dataStore.dataset.slice(0, 200)
+  const keys = Object.keys(sampleRows[0] || {})
+  const dims = keys.filter(k => {
+    if (exclude.has(k.toLowerCase())) return false
+    const vals = sampleRows.map(r => r[k]).filter(v => v !== null && v !== undefined)
+    if (vals.length === 0) return false
+    const numericCount = vals.filter(v => !isNaN(parseFloat(v))).length
+    return (numericCount / vals.length) < 0.5
+  })
+  return dims.map(name => ({ label: name, value: name }))
 })
 
 // Handle metrics change
@@ -197,35 +179,11 @@ watch(colorScheme, (newScheme) => {
   }
 })
 
-const availableFields = computed(() => {
-  if (!dataStore.dataset || dataStore.dataset.length === 0) {
-    return []
-  }
-  
-  const firstRow = dataStore.dataset[0]
-  const fields = []
-  
-  // Detect field types based on data
-  Object.keys(firstRow).forEach(key => {
-    const sampleValues = dataStore.dataset.slice(0, 100).map(row => row[key])
-    const numericValues = sampleValues.filter(v => !isNaN(parseFloat(v)))
-    
-    // If more than 80% are numeric, it's a measure, otherwise dimension
-    const type = (numericValues.length / sampleValues.length) > 0.8 ? 'Mea' : 'Dim'
-    
-    fields.push({ name: key, type })
-  })
-  
-  return fields
-})
+// Available Fields section removed
 
 const stats = computed(() => dataStore.metricStats)
 
-// Drag and drop handlers
-const handleDragStart = (field, event) => {
-  event.dataTransfer.effectAllowed = 'move'
-  event.dataTransfer.setData('field', JSON.stringify(field))
-}
+// Drag-and-drop removed along with Available Fields section
 
 // Number formatting with comma separators
 const formatNumber = (num) => {

@@ -12,20 +12,7 @@
         <MapSelector />
       </div>
       
-      <!-- Hierarchical Filter Section -->
-      <div class="property-section" v-if="showHierarchicalFilter">
-        <div class="section-label">{{ hierarchicalFilterLabel }}</div>
-        <div class="checkbox-list">
-          <n-checkbox
-            v-for="item in hierarchicalFilterItems"
-            :key="item"
-            :checked="isItemSelected(item)"
-            @update:checked="(checked) => toggleItem(item, checked)"
-          >
-            {{ item }}
-          </n-checkbox>
-        </div>
-      </div>
+      
       
       <!-- Data Uploader -->
       <div class="property-section">
@@ -37,7 +24,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { NSelect, NCheckbox, NIcon } from 'naive-ui'
+import { NIcon } from 'naive-ui'
 import { Funnel as FilterIcon } from '@vicons/ionicons5'
 import { useDataStore } from '@/store/dataStore'
 import MapSelector from '@/components/MapSelector.vue'
@@ -45,140 +32,7 @@ import DataUploader from '@/components/DataUploader.vue'
 
 const dataStore = useDataStore()
 
-const selectedItems = ref(new Set())
-
-// Clear selected items when map focus changes
-watch(() => dataStore.mapFocus, () => {
-  selectedItems.value.clear()
-  dataStore.setSelectedSubdivisions([])
-})
-
-// Determine what to show based on map level and focus
-const showHierarchicalFilter = computed(() => {
-  const level = dataStore.mapLevel
-  const focus = dataStore.mapFocus
-  
-  // Show provinces when region level is selected AND a specific region is focused
-  if (level === 'regions' && focus) {
-    return true
-  }
-  
-  // Show cities when province level is selected AND a specific province is focused
-  if (level === 'provinces' && focus) {
-    return true
-  }
-  
-  return false
-})
-
-const hierarchicalFilterLabel = computed(() => {
-  const level = dataStore.mapLevel
-  const focus = dataStore.mapFocus
-  
-  if (level === 'regions' && focus) {
-    return `Provinces in ${focus}`
-  }
-  
-  if (level === 'provinces' && focus) {
-    return `Cities in ${focus}`
-  }
-  
-  return 'Filter'
-})
-
-const hierarchicalFilterItems = ref([])
-
-// Region to provinces mapping
-const regionProvinceMap = {
-  'Ilocos Region': ['Ilocos Norte', 'Ilocos Sur', 'La Union', 'Pangasinan'],
-  'Cagayan Valley': ['Batanes', 'Cagayan', 'Isabela', 'Nueva Vizcaya', 'Quirino'],
-  'Central Luzon': ['Aurora', 'Bataan', 'Bulacan', 'Nueva Ecija', 'Pampanga', 'Tarlac', 'Zambales'],
-  'CALABARZON': ['Batangas', 'Cavite', 'Laguna', 'Quezon', 'Rizal'],
-  'MIMAROPA': ['Marinduque', 'Occidental Mindoro', 'Oriental Mindoro', 'Palawan', 'Romblon'],
-  'Bicol Region': ['Albay', 'Camarines Norte', 'Camarines Sur', 'Catanduanes', 'Masbate', 'Sorsogon'],
-  'Western Visayas': ['Aklan', 'Antique', 'Capiz', 'Guimaras', 'Iloilo', 'Negros Occidental'],
-  'Central Visayas': ['Bohol', 'Cebu', 'Negros Oriental', 'Siquijor'],
-  'Eastern Visayas': ['Biliran', 'Eastern Samar', 'Leyte', 'Northern Samar', 'Samar', 'Southern Leyte'],
-  'Zamboanga Peninsula': ['Zamboanga del Norte', 'Zamboanga del Sur', 'Zamboanga Sibugay'],
-  'Northern Mindanao': ['Bukidnon', 'Camiguin', 'Lanao del Norte', 'Misamis Occidental', 'Misamis Oriental'],
-  'Davao Region': ['Davao de Oro', 'Davao del Norte', 'Davao del Sur', 'Davao Occidental', 'Davao Oriental'],
-  'SOCCSKSARGEN': ['Cotabato', 'Sarangani', 'South Cotabato', 'Sultan Kudarat'],
-  'Caraga': ['Agusan del Norte', 'Agusan del Sur', 'Dinagat Islands', 'Surigao del Norte', 'Surigao del Sur'],
-  'Cordillera Administrative Region': ['Abra', 'Apayao', 'Benguet', 'Ifugao', 'Kalinga', 'Mountain Province']
-}
-
-// Load hierarchical items when focus changes  
-watch([() => dataStore.mapLevel, () => dataStore.mapFocus], async ([level, focus]) => {
-  if (!focus) {
-    hierarchicalFilterItems.value = []
-    return
-  }
-  
-  try {
-    // For regions level, get provinces from mapping
-    if (level === 'regions') {
-      const provinces = regionProvinceMap[focus] || []
-      console.log('Provinces for', focus, ':', provinces)
-      hierarchicalFilterItems.value = provinces
-    }
-    
-    // For provinces level, load cities from user's dataset
-    if (level === 'provinces') {
-      const items = new Set()
-      
-      console.log('Loading cities for province:', focus)
-      
-      // Get cities from user's dataset that belong to this province
-      if (dataStore.dataset && dataStore.dataset.length > 0) {
-        dataStore.dataset.forEach(row => {
-          // Match province using alias-aware matching
-          const rowProvince = row.province
-          if (rowProvince) {
-            // Check if row's province matches the focused province
-            const matchesExact = rowProvince === focus
-            const matchesLower = rowProvince.toLowerCase().trim() === focus.toLowerCase().trim()
-            
-            if ((matchesExact || matchesLower) && row.city) {
-              items.add(row.city)
-            }
-          }
-        })
-      }
-      
-      console.log('Cities found in dataset for', focus, ':', items.size)
-      hierarchicalFilterItems.value = Array.from(items).sort()
-      console.log('Final city list:', hierarchicalFilterItems.value)
-    }
-  } catch (error) {
-    console.error('Error loading hierarchical items:', error)
-    hierarchicalFilterItems.value = []
-  }
-}, { immediate: true })
-
-const isItemSelected = (item) => {
-  return selectedItems.value.has(item)
-}
-
-const toggleItem = (item, checked) => {
-  const level = dataStore.mapLevel
-  
-  if (checked) {
-    selectedItems.value.add(item)
-  } else {
-    selectedItems.value.delete(item)
-  }
-  
-  // Update the store with selected boundaries to show
-  const selectedArray = Array.from(selectedItems.value)
-  
-  if (level === 'regions') {
-    // Store selected provinces to show their boundaries
-    dataStore.setSelectedSubdivisions(selectedArray)
-  } else if (level === 'provinces') {
-    // Store selected cities to show their boundaries
-    dataStore.setSelectedSubdivisions(selectedArray)
-  }
-}
+ 
 </script>
 
 <style scoped>

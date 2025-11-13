@@ -63,36 +63,32 @@ onMounted(async () => {
 // Load GeoJSON data based on map level
 async function loadGeoJSONData() {
   const basePath = import.meta.env.BASE_URL || '/'
-  let geoJsonPath = `${basePath}data/geojson/country/medres/country.0.01.json` // Default to country
+  let geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM0_simplified.geojson` // Default to country
   
   // If showing subdivisions, load the subdivision level
   if (dataStore.showSubdivisions && dataStore.subdivisionLevel) {
     switch (dataStore.subdivisionLevel) {
       case 'provinces':
-        // Load all provinces - we'll filter by region later
-        geoJsonPath = `${basePath}data/geojson/regions/medres/regions.0.01.json`
+        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM2_simplified_with_psgc.geojson`
         break
       case 'cities':
-        // Cities will be loaded dynamically based on province
-        geoJsonPath = `${basePath}data/geojson/regions/medres/regions.0.01.json`
+        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM3_simplified_with_psgc.geojson`
         break
     }
   } else {
     // Determine which GeoJSON to load based on map level
     switch (dataStore.mapLevel) {
       case 'country':
-        geoJsonPath = `${basePath}data/geojson/country/medres/country.0.01.json`
+        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM0_simplified.geojson`
         break
       case 'regions':
-        geoJsonPath = `${basePath}data/geojson/regions/medres/regions.0.01.json`
+        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM1_simplified_with_psgc.geojson`
         break
       case 'provinces':
-        // Load all provinces from regions file
-        geoJsonPath = `${basePath}data/geojson/regions/medres/regions.0.01.json`
+        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM2_simplified_with_psgc.geojson`
         break
       case 'cities':
-        // Cities will be loaded dynamically
-        geoJsonPath = `${basePath}data/geojson/regions/medres/regions.0.01.json`
+        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM3_simplified_with_psgc.geojson`
         break
     }
   }
@@ -120,13 +116,11 @@ async function loadGeoJSONData() {
     // Load subdivision level GeoJSON
     let subdivisionPath = ''
     if (dataStore.mapLevel === 'regions') {
-      subdivisionPath = `${basePath}data/geojson/regions/medres/regions.0.01.json`
-      console.log('Loading provinces from regions medres file')
+      subdivisionPath = `${basePath}data/geoBoundaries-PHL-ADM2_simplified_with_psgc.geojson`
+      console.log('Loading provinces (ADM2) for region')
     } else if (dataStore.mapLevel === 'provinces') {
-      // For cities, we need to load from municities folder based on province
-      // For now, use regions file as placeholder
-      subdivisionPath = `${basePath}data/geojson/regions/medres/regions.0.01.json`
-      console.log('Loading cities from medres file')
+      subdivisionPath = `${basePath}data/geoBoundaries-PHL-ADM3_simplified_with_psgc.geojson`
+      console.log('Loading cities (ADM3) for province')
     }
     
     if (subdivisionPath) {
@@ -611,10 +605,8 @@ function setupCalloutInteractions(calloutId, marker, line, center) {
 // Helper function to get location name from feature properties
 function getLocationName(feature) {
   const props = feature.properties
-  // Try new medres GeoJSON property names first (adm1_en, adm2_en, adm3_en)
-  // Then fall back to old geoBoundaries property names
-  return props.adm3_en || props.adm2_en || props.adm1_en ||
-         props.shapeName || props.shapeGroup || props.shapeID || 
+  // Try common property names used in geoBoundaries
+  return props.shapeName || props.shapeGroup || props.shapeID || 
          props.name || props.region || props.province || props.city || 
          'Unknown'
 }

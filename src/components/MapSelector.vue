@@ -16,9 +16,6 @@
               <n-radio value="provinces">
                 Provinces
               </n-radio>
-              <n-radio value="cities">
-                Cities & Municipalities
-              </n-radio>
             </n-space>
           </n-radio-group>
         </div>
@@ -49,17 +46,33 @@
           />
         </div>
 
-        <!-- City Selector (when cities level is selected) -->
-        <div v-if="selectedLevel === 'cities' && availableCities.length > 0" class="selector-group">
-          <n-text strong>Select City/Municipality</n-text>
-          <n-select
-            v-model:value="selectedCity"
-            :options="cityOptions"
-            placeholder="View all cities"
-            clearable
-            filterable
-            @update:value="handleCitySelect"
-          />
+        <!-- Subdivision checklist -->
+        <div v-if="selectedLevel === 'regions' && selectedRegion" class="selector-group">
+          <n-text strong>Provinces in {{ selectedRegion }}</n-text>
+          <div class="checkbox-list">
+            <n-checkbox
+              v-for="item in subdivisions"
+              :key="item"
+              :checked="isSubdivisionChecked(item)"
+              @update:checked="(checked) => toggleSubdivision(item, checked)"
+            >
+              {{ item }}
+            </n-checkbox>
+          </div>
+        </div>
+
+        <div v-if="selectedLevel === 'provinces' && selectedProvince" class="selector-group">
+          <n-text strong>Cities/Municipalities in {{ selectedProvince }}</n-text>
+          <div class="checkbox-list">
+            <n-checkbox
+              v-for="item in subdivisions"
+              :key="item"
+              :checked="isSubdivisionChecked(item)"
+              @update:checked="(checked) => toggleSubdivision(item, checked)"
+            >
+              {{ item }}
+            </n-checkbox>
+          </div>
         </div>
 
         <!-- Current View Info -->
@@ -84,14 +97,15 @@ const dataStore = useDataStore()
 const selectedLevel = ref('country')
 const selectedRegion = ref(null)
 const selectedProvince = ref(null)
-const selectedCity = ref(null)
-const showProvincesInRegion = ref(false)
-const showCitiesInProvince = ref(false)
 
 // Available locations from GeoJSON
 const availableRegions = ref([])
 const availableProvinces = ref([])
-const availableCities = ref([])
+// City list removed
+
+// Subdivisions within current focus
+const subdivisions = ref([])
+const selectedSubdivisionSet = ref(new Set())
 
 // Computed options for selects
 const regionOptions = computed(() => 
@@ -108,18 +122,11 @@ const provinceOptions = computed(() =>
   }))
 )
 
-const cityOptions = computed(() => 
-  availableCities.value.map(city => ({
-    label: city,
-    value: city
-  }))
-)
+// City options removed
 
 // Current view information
 const currentViewInfo = computed(() => {
-  if (selectedCity.value) {
-    return `Viewing: ${selectedCity.value}`
-  } else if (selectedProvince.value) {
+  if (selectedProvince.value) {
     return `Viewing: ${selectedProvince.value}`
   } else if (selectedRegion.value) {
     return `Viewing: ${selectedRegion.value}`
@@ -134,48 +141,78 @@ function handleLevelChange(level) {
   // Clear selections when changing levels
   selectedRegion.value = null
   selectedProvince.value = null
-  selectedCity.value = null
+  // City selection removed
   
   // Update store
   dataStore.setMapLevel(level)
   dataStore.setMapFocus(null)
+  clearSubdivisions()
 }
 
 function handleRegionSelect(region) {
-  showProvincesInRegion.value = false
   dataStore.setMapFocus(region)
-  dataStore.setShowSubdivisions(false)
+  clearSubdivisions()
+  loadSubdivisions()
 }
 
 function handleProvinceSelect(province) {
-  showCitiesInProvince.value = false
   dataStore.setMapFocus(province)
-  dataStore.setShowSubdivisions(false)
+  clearSubdivisions()
+  loadSubdivisions()
 }
 
-function handleCitySelect(city) {
-  dataStore.setMapFocus(city)
+// City select removed
+
+function isSubdivisionChecked(item) {
+  return selectedSubdivisionSet.value.has(item)
 }
 
-function handleShowProvinces(checked) {
-  if (checked && selectedRegion.value) {
-    dataStore.setShowSubdivisions(true)
-    dataStore.setSubdivisionLevel('provinces')
-    dataStore.setParentLocation(selectedRegion.value)
+function toggleSubdivision(item, checked) {
+  if (checked) selectedSubdivisionSet.value.add(item)
+  else selectedSubdivisionSet.value.delete(item)
+  dataStore.setSelectedSubdivisions(Array.from(selectedSubdivisionSet.value))
+}
+
+function clearSubdivisions() {
+  selectedSubdivisionSet.value.clear()
+  subdivisions.value = []
+  dataStore.setSelectedSubdivisions([])
+}
+
+async function loadSubdivisions() {
+  const basePath = import.meta.env.BASE_URL || '/'
+  if (selectedLevel.value === 'regions' && selectedRegion.value) {
+    const resp = await fetch(`${basePath}data/geoBoundaries-PHL-ADM2_simplified_with_psgc.geojson`)
+    const adm2 = await resp.json()
+    const focusNorm = selectedRegion.value.toLowerCase().trim()
+    const list = adm2.features
+      .filter(f => {
+        const props = f.properties || {}
+        const group = (props.shapeGroup || props.region || '').toLowerCase().trim()
+        return group === focusNorm
+      })
+      .map(f => f.properties.shapeName)
+      .filter(Boolean)
+    subdivisions.value = Array.from(new Set(list)).sort()
+  } else if (selectedLevel.value === 'provinces' && selectedProvince.value) {
+    const resp = await fetch(`${basePath}data/geoBoundaries-PHL-ADM3_simplified_with_psgc.geojson`)
+    const adm3 = await resp.json()
+    const focusNorm = selectedProvince.value.toLowerCase().trim()
+    const list = adm3.features
+      .filter(f => {
+        const props = f.properties || {}
+        const group = (props.shapeGroup || props.province || '').toLowerCase().trim()
+        return group === focusNorm
+      })
+      .map(f => f.properties.shapeName)
+      .filter(Boolean)
+    subdivisions.value = Array.from(new Set(list)).sort()
   } else {
-    dataStore.setShowSubdivisions(false)
+    subdivisions.value = []
   }
 }
+// City subdivisions removed
 
-function handleShowCities(checked) {
-  if (checked && selectedProvince.value) {
-    dataStore.setShowSubdivisions(true)
-    dataStore.setSubdivisionLevel('cities')
-    dataStore.setParentLocation(selectedProvince.value)
-  } else {
-    dataStore.setShowSubdivisions(false)
-  }
-}
 
 // Watch for GeoJSON data to extract available locations
 watch(() => dataStore.geoData, (geoData) => {
@@ -193,14 +230,17 @@ watch(() => dataStore.geoData, (geoData) => {
     availableRegions.value = Array.from(locations).sort()
   } else if (selectedLevel.value === 'provinces') {
     availableProvinces.value = Array.from(locations).sort()
-  } else if (selectedLevel.value === 'cities') {
-    availableCities.value = Array.from(locations).sort()
   }
 }, { immediate: true })
 
 // Sync with store map level
 watch(() => dataStore.mapLevel, (level) => {
   selectedLevel.value = level
+})
+
+watch([selectedLevel, selectedRegion, selectedProvince], () => {
+  clearSubdivisions()
+  loadSubdivisions()
 })
 </script>
 
