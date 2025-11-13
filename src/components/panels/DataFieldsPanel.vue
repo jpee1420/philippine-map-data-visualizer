@@ -66,6 +66,17 @@
             size="small"
           />
         </div>
+        
+        <div class="config-item">
+          <label>Show Callout Labels</label>
+          <n-switch
+            v-model:value="showCallouts"
+            @update:value="handleCalloutToggle"
+          />
+          <div v-if="showCallouts" class="field-hint">
+            Display data callouts on map boundaries (scales with zoom)
+          </div>
+        </div>
       </div>
       
       <!-- Statistics Summary -->
@@ -96,7 +107,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { NIcon, NTag, NButton, NSelect, NInput } from 'naive-ui'
+import { NIcon, NTag, NButton, NSelect, NInput, NSwitch } from 'naive-ui'
 import { Layers as LayersIcon, Menu as MenuIcon, Add as AddIcon, Close as CloseIcon } from '@vicons/ionicons5'
 import { useDataStore } from '@/store/dataStore'
 
@@ -105,6 +116,7 @@ const dataStore = useDataStore()
 // Map configuration fields
 const selectedMetrics = ref([])
 const legendField = ref(null)
+const showCallouts = ref(dataStore.showCalloutLabels)
 
 // Computed metric options from available fields
 const metricOptions = computed(() => {
@@ -150,6 +162,11 @@ const handleLegendChange = (field) => {
   } else {
     dataStore.legendCategories = []
   }
+}
+
+// Handle callout toggle
+const handleCalloutToggle = (value) => {
+  dataStore.setShowCalloutLabels(value)
 }
 
 const colorScheme = ref('blue')

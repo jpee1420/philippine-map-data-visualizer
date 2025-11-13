@@ -361,38 +361,34 @@ function renderCalloutLabels() {
     const locationName = getLocationName(feature)
     const value = dataStore.getValueForLocation(locationName)
     if (value !== null) {
-      const center = getCenter(feature)
+      // Calculate center from feature's geometry bounds
+      const center = getFeatureCenter(feature)
       locationData.push({ name: locationName, value, center, feature })
     }
   })
   
-  // Sort by value and take top 10
+  // Sort by value and take top locations
   locationData.sort((a, b) => b.value - a.value)
   
-  // If we have a map focus or region filter, show only that location
-  // Otherwise show top 10
+  // Show callouts for all currently visible features
+  // If there are selected subdivisions (e.g., provinces within a region), show those
+  // Otherwise, show top 10 by value
   let topLocations
-  const focusedRegion = dataStore.mapFocus || dataStore.filters.region
   
-  if (focusedRegion && locationData.length > 0) {
-    // Find the focused location - try exact match first, then partial match
-    let focusedLocation = locationData.find(loc => loc.name === focusedRegion)
-    
-    // If not found, try matching with region aliases
-    if (!focusedLocation) {
-      focusedLocation = locationData.find(loc => {
-        // Check if names match when normalized
-        const normalizeName = (name) => name.toLowerCase().trim()
-        return normalizeName(loc.name) === normalizeName(focusedRegion) ||
-               loc.name.includes(focusedRegion) ||
-               focusedRegion.includes(loc.name)
-      })
-    }
-    
-    topLocations = focusedLocation ? [focusedLocation] : locationData.slice(0, 1)
-    console.log('Focused location for callout:', focusedLocation?.name, 'from filter:', focusedRegion)
+  if (dataStore.selectedSubdivisions.length > 0) {
+    // Show callouts for selected subdivisions (e.g., checked provinces)
+    topLocations = locationData.filter(loc => 
+      dataStore.selectedSubdivisions.includes(loc.name)
+    )
+    console.log('Showing callouts for selected subdivisions:', topLocations.length)
+  } else if (locationData.length <= 20) {
+    // If viewing a focused region with few features (e.g., provinces in a region), show all
+    topLocations = locationData
+    console.log('Showing callouts for all visible features:', topLocations.length)
   } else {
+    // Otherwise show top 10 by value
     topLocations = locationData.slice(0, 10)
+    console.log('Showing top 10 callouts by value')
   }
   
   // Get current zoom level for scaling
@@ -431,31 +427,78 @@ function renderCalloutLabels() {
     
     // Scale label content with zoom
     const fontSize = Math.max(10, Math.min(14, 12 * zoomScale))
-    const labelWidth = Math.max(120, Math.min(180, 150 * zoomScale))
+    const labelWidth = Math.max(120, Math.min(200, 160 * zoomScale))
     
-    // Create label with zoom-responsive sizing
+    // Get row data for additional metrics
+    const row = dataStore.findRowByLocation(name)
+    
+    // Build metrics display
+    let metricsHtml = ''
+    if (dataStore.selectedMetrics && dataStore.selectedMetrics.length > 0) {
+      metricsHtml = dataStore.selectedMetrics.map(metric => {
+        const metricValue = row ? parseFloat(row[metric]) : null
+        const formattedValue = metricValue !== null && !isNaN(metricValue)
+          ? metricValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+          : 'N/A'
+        return `<div class="callout-metric"><span class="metric-name">${metric}:</span> <span class="metric-value">${formattedValue}</span></div>`
+      }).join('')
+    } else {
+      // Fallback to single metric
+      const formattedValue = value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+      metricsHtml = `<div class="callout-value">${dataStore.selectedMetric}: ${formattedValue}</div>`
+    }
+    
+    // Create unique ID for this callout
+    const calloutId = `callout-${index}-${name.replace(/\s+/g, '-')}`
+    
+    // Create label with zoom-responsive sizing and interactive controls
     const labelIcon = L.divIcon({
       className: 'callout-label',
       html: `
-        <div class="callout-content" style="font-size: ${fontSize}px; min-width: ${labelWidth}px;">
-          <div class="callout-name">${name}</div>
-          <div class="callout-value">${value.toFixed(0)}</div>
-          <div class="callout-breakdown">
-            <span class="male">Male ${Math.floor(value * 0.51)}</span>
-            <span class="female">Female ${Math.floor(value * 0.49)}</span>
+        <div class="callout-content draggable-callout" 
+             data-callout-id="${calloutId}"
+             style="font-size: ${fontSize}px; min-width: ${labelWidth}px;">
+          <div class="callout-header">
+            <div class="callout-name">${name}</div>
+            <div class="callout-controls">
+              <button class="callout-btn resize-btn" title="Resize">⊡</button>
+            </div>
           </div>
+          <div class="callout-metrics">
+            ${metricsHtml}
+          </div>
+          <div class="resize-handle" title="Drag to resize"></div>
         </div>
       `,
-      iconSize: [labelWidth, 60 * zoomScale],
-      iconAnchor: [0, 30 * zoomScale]
+      iconSize: [labelWidth, 'auto'],
+      iconAnchor: [0, 0]
     })
     
-    const label = L.marker(labelPos, { icon: labelIcon })
+    const label = L.marker(labelPos, { 
+      icon: labelIcon,
+      draggable: true,
+      autoPan: false
+    })
+    
+    // Store reference to update line when dragged
+    label._boundaryCenter = center
+    label._connectorLine = line
+    
+    // Update line when label is dragged
+    label.on('drag', (e) => {
+      const newPos = e.target.getLatLng()
+      line.setLatLngs([center, [newPos.lat, newPos.lng]])
+    })
     
     // Add to layer group
     marker.addTo(calloutLayer.value)
     line.addTo(calloutLayer.value)
     label.addTo(calloutLayer.value)
+    
+    // Add resize functionality after DOM is ready
+    setTimeout(() => {
+      setupCalloutInteractions(calloutId, label, line, center)
+    }, 100)
   })
 }
 
@@ -509,6 +552,56 @@ function calculateLabelPositions(locations, zoom) {
   return positions
 }
 
+// Setup interactive controls for callout (resize)
+function setupCalloutInteractions(calloutId, marker, line, center) {
+  const element = document.querySelector(`[data-callout-id="${calloutId}"]`)
+  if (!element) return
+  
+  const resizeHandle = element.querySelector('.resize-handle')
+  if (!resizeHandle) return
+  
+  let isResizing = false
+  let startX, startY, startWidth, startHeight
+  
+  resizeHandle.addEventListener('mousedown', (e) => {
+    e.stopPropagation()
+    isResizing = true
+    startX = e.clientX
+    startY = e.clientY
+    startWidth = element.offsetWidth
+    startHeight = element.offsetHeight
+    
+    element.style.transition = 'none'
+    document.body.style.cursor = 'nwse-resize'
+    
+    const onMouseMove = (e) => {
+      if (!isResizing) return
+      
+      const deltaX = e.clientX - startX
+      const deltaY = e.clientY - startY
+      
+      // Calculate new dimensions (minimum 100px)
+      const newWidth = Math.max(100, startWidth + deltaX)
+      const newHeight = Math.max(60, startHeight + deltaY)
+      
+      element.style.width = `${newWidth}px`
+      element.style.minWidth = `${newWidth}px`
+      element.style.height = `${newHeight}px`
+    }
+    
+    const onMouseUp = () => {
+      isResizing = false
+      element.style.transition = ''
+      document.body.style.cursor = ''
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+    
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  })
+}
+
 // Helper function to get location name from feature properties
 function getLocationName(feature) {
   const props = feature.properties
@@ -516,6 +609,44 @@ function getLocationName(feature) {
   return props.shapeName || props.shapeGroup || props.shapeID || 
          props.name || props.region || props.province || props.city || 
          'Unknown'
+}
+
+// Helper function to calculate center of a single feature's geometry
+// Uses centroid calculation for better accuracy on irregular shapes
+function getFeatureCenter(feature) {
+  if (!feature || !feature.geometry) {
+    return [12.8797, 121.7740] // Default to Philippines center
+  }
+  
+  let totalLat = 0
+  let totalLng = 0
+  let pointCount = 0
+  
+  const processCoordinates = (coords) => {
+    coords.forEach(coord => {
+      const [lng, lat] = coord
+      totalLat += lat
+      totalLng += lng
+      pointCount++
+    })
+  }
+  
+  if (feature.geometry.type === 'Polygon') {
+    // Polygon has array of rings, use first ring (outer boundary)
+    processCoordinates(feature.geometry.coordinates[0])
+  } else if (feature.geometry.type === 'MultiPolygon') {
+    // MultiPolygon has array of polygons, process all
+    feature.geometry.coordinates.forEach(polygon => {
+      processCoordinates(polygon[0])
+    })
+  }
+  
+  if (pointCount === 0) {
+    return [12.8797, 121.7740] // Fallback
+  }
+  
+  // Return centroid (average of all points) [lat, lng]
+  return [totalLat / pointCount, totalLng / pointCount]
 }
 
 // Category colors for legend field (same as Legend component)
@@ -708,20 +839,94 @@ defineExpose({
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   font-family: Arial, sans-serif;
   min-width: 140px;
+  position: relative;
+  cursor: move;
+  transition: box-shadow 0.2s;
+}
+
+.callout-content:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.callout-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
 }
 
 .callout-name {
   font-weight: bold;
   font-size: 13px;
   color: #333;
-  margin-bottom: 4px;
+  flex: 1;
+}
+
+.callout-controls {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.callout-btn {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  transition: all 0.2s;
+}
+
+.callout-btn:hover {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+}
+
+.callout-metrics {
+  margin-top: 4px;
+}
+
+.resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 0%, transparent 50%, #9ca3af 50%, #9ca3af 100%);
+  border-bottom-right-radius: 6px;
+}
+
+.resize-handle:hover {
+  background: linear-gradient(135deg, transparent 0%, transparent 50%, #6b7280 50%, #6b7280 100%);
 }
 
 .callout-value {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: bold;
   color: #2563eb;
   margin-bottom: 4px;
+}
+
+.callout-metric {
+  font-size: 11px;
+  color: #444;
+  margin: 2px 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.callout-metric .metric-name {
+  color: #666;
+  font-weight: 500;
+}
+
+.callout-metric .metric-value {
+  color: #2563eb;
+  font-weight: 600;
 }
 
 .callout-breakdown {

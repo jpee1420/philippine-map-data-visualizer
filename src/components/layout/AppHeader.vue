@@ -6,7 +6,7 @@
       </div>
       <div class="header-title">
         <h1>Analytics Dashboard</h1>
-        <p class="subtitle">Interactive Geographic Data Visualization</p>
+        <!-- <p class="subtitle">Interactive Geographic Data Visualization</p> -->
       </div>
     </div>
     
