@@ -20,7 +20,8 @@ export default defineConfig({
     port: 3000
   },
   esbuild: {
-    sourcemap: false
+    sourcemap: false,
+    drop: ["console", "debugger"]
   }
 
 })
