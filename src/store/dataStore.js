@@ -133,9 +133,6 @@ export const useDataStore = defineStore('dataStore', {
     availableMetrics: [],
     mapLevel: 'country', // 'country', 'regions', 'provinces', or 'cities'
     mapFocus: null, // Specific location to focus on (e.g., "Ilocos Region")
-    showSubdivisions: false, // Show subdivisions within focused location
-    subdivisionLevel: null, // 'provinces' or 'cities'
-    parentLocation: null, // Parent location for subdivisions
     selectedSubdivisions: [], // Array of selected subdivisions to show boundaries
     hideInternalBoundaries: false, // Hide internal boundaries
     showCalloutLabels: false, // Show callout diagram labels on map
@@ -340,25 +337,10 @@ export const useDataStore = defineStore('dataStore', {
     setMapLevel(level) {
       this.mapLevel = level
       this.mapFocus = null // Clear focus when changing levels
-      this.showSubdivisions = false
-      this.subdivisionLevel = null
-      this.parentLocation = null
     },
     
     setMapFocus(location) {
       this.mapFocus = location
-    },
-    
-    setShowSubdivisions(show) {
-      this.showSubdivisions = show
-    },
-    
-    setSubdivisionLevel(level) {
-      this.subdivisionLevel = level
-    },
-    
-    setParentLocation(location) {
-      this.parentLocation = location
     },
     
     setSelectedSubdivisions(subdivisions) {

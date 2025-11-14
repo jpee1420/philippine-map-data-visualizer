@@ -13,7 +13,7 @@ import { ref, onMounted, watch } from 'vue'
 import { NSpin } from 'naive-ui'
 import L from 'leaflet'
 import { useDataStore } from '@/store/dataStore'
-import { loadGeoJSON, getCenter } from '@/utils/geoUtils'
+import { loadGeoJSON } from '@/utils/geoUtils'
 
 const dataStore = useDataStore()
 const mapElement = ref(null)
@@ -65,32 +65,20 @@ async function loadGeoJSONData() {
   const basePath = import.meta.env.BASE_URL || '/'
   let geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM0_simplified.geojson` // Default to country
   
-  // If showing subdivisions, load the subdivision level
-  if (dataStore.showSubdivisions && dataStore.subdivisionLevel) {
-    switch (dataStore.subdivisionLevel) {
-      case 'provinces':
-        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM2_simplified_with_psgc.geojson`
-        break
-      case 'cities':
-        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM3_simplified_with_psgc.geojson`
-        break
-    }
-  } else {
-    // Determine which GeoJSON to load based on map level
-    switch (dataStore.mapLevel) {
-      case 'country':
-        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM0_simplified.geojson`
-        break
-      case 'regions':
-        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM1_simplified_with_psgc.geojson`
-        break
-      case 'provinces':
-        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM2_simplified_with_psgc.geojson`
-        break
-      case 'cities':
-        geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM3_simplified_with_psgc.geojson`
-        break
-    }
+  // Determine which GeoJSON to load based on map level
+  switch (dataStore.mapLevel) {
+    case 'country':
+      geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM0_simplified.geojson`
+      break
+    case 'regions':
+      geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM1_simplified_with_psgc.geojson`
+      break
+    case 'provinces':
+      geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM2_simplified_with_psgc.geojson`
+      break
+    case 'cities':
+      geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM3_simplified_with_psgc.geojson`
+      break
   }
   
   console.log('Loading GeoJSON from:', geoJsonPath)
@@ -162,9 +150,6 @@ async function loadGeoJSONData() {
       }
     }
     console.log('Total filtered features (parent + subdivisions):', filteredGeoData.features.length)
-  } else if (dataStore.showSubdivisions && dataStore.parentLocation) {
-    // Filter to show only subdivisions within parent location
-    filteredGeoData = geoData
   } else if (dataStore.mapFocus && dataStore.mapLevel !== 'country') {
     filteredGeoData = {
       ...geoData,
@@ -290,14 +275,12 @@ function renderGeoJSON(geoData) {
   
   // Fit bounds when a region/province is selected and it's different from last zoomed
   const shouldZoom = dataStore.mapFocus && 
-                     dataStore.selectedSubdivisions.length === 0 && 
                      geoData.features.length > 0 &&
                      lastFocusZoomed.value !== dataStore.mapFocus &&
                      !userHasMoved.value // Don't auto-zoom if user has manually moved
   
   console.log('Should zoom?', shouldZoom, {
     mapFocus: dataStore.mapFocus,
-    subdivisions: dataStore.selectedSubdivisions.length,
     features: geoData.features.length,
     lastZoomed: lastFocusZoomed.value,
     userHasMoved: userHasMoved.value
@@ -375,13 +358,7 @@ function renderCalloutLabels() {
   // Otherwise, show top 10 by value
   let topLocations
   
-  if (dataStore.selectedSubdivisions.length > 0) {
-    // Show callouts for selected subdivisions (e.g., checked provinces)
-    topLocations = locationData.filter(loc => 
-      dataStore.selectedSubdivisions.includes(loc.name)
-    )
-    console.log('Showing callouts for selected subdivisions:', topLocations.length)
-  } else if (locationData.length <= 20) {
+  if (locationData.length <= 20) {
     // If viewing a focused region with few features (e.g., provinces in a region), show all
     topLocations = locationData
     console.log('Showing callouts for all visible features:', topLocations.length)
@@ -709,24 +686,6 @@ watch(() => dataStore.mapFocus, async (newFocus, oldFocus) => {
   await loadGeoJSONData()
 })
 
-// Watch for selected subdivisions changes
-watch(() => dataStore.selectedSubdivisions, async () => {
-  console.log('Selected subdivisions changed:', dataStore.selectedSubdivisions)
-  await loadGeoJSONData()
-}, { deep: true })
-
-// Watch for subdivision changes
-watch(() => dataStore.showSubdivisions, async () => {
-  await loadGeoJSONData()
-})
-
-// Watch for hide boundaries changes
-watch(() => dataStore.hideInternalBoundaries, () => {
-  if (dataStore.geoData) {
-    renderGeoJSON(dataStore.geoData)
-  }
-})
-
 // Watch for callout labels changes
 watch(() => dataStore.showCalloutLabels, () => {
   if (dataStore.geoData) {
@@ -754,38 +713,6 @@ watch(() => map.value, (newMap) => {
     })
   }
 }, { immediate: true })
-
-// Expose recenter method
-const recenterMap = () => {
-  if (map.value) {
-    setTimeout(() => {
-      map.value.invalidateSize()
-      map.value.setView([12.8797, 121.7740], map.value.getZoom())
-    }, 100)
-  }
-}
-
-// Expose invalidate size method (for container resize without recentering)
-const invalidateMapSize = () => {
-  if (map.value) {
-    // Mark as programmatic to prevent userHasMoved flag
-    map.value._programmaticMove = true
-    
-    setTimeout(() => {
-      map.value.invalidateSize()
-      
-      // Reset flag after invalidation
-      setTimeout(() => {
-        map.value._programmaticMove = false
-      }, 100)
-    }, 100)
-  }
-}
-
-defineExpose({
-  recenterMap,
-  invalidateMapSize
-})
 </script>
 
 <style scoped>

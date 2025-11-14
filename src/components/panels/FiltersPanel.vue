@@ -12,8 +12,6 @@
         <MapSelector />
       </div>
       
-      
-      
       <!-- Data Uploader -->
       <div class="property-section">
         <DataUploader />
