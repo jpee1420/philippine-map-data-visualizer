@@ -60,24 +60,36 @@ onMounted(async () => {
   }
 })
 
+// Normalize fused GADM names like "SantaBarbara" -> "Santa Barbara"
+function normalizeGADMName(name) {
+  const s = String(name || '')
+  return s
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Za-z])(\d)/g, '$1 $2')
+    .replace(/(\d)([A-Za-z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .trim()
+}
+
 // Load GeoJSON data based on map level
 async function loadGeoJSONData() {
   const basePath = import.meta.env.BASE_URL || '/'
-  let geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM0_simplified.geojson` // Default to country
+  let geoJsonPath = `${basePath}data/gadm41_PHL_0.json` // Default to country
   
   // Determine which GeoJSON to load based on map level
   switch (dataStore.mapLevel) {
     case 'country':
-      geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM0_simplified.geojson`
+      geoJsonPath = `${basePath}data/gadm41_PHL_0.json`
       break
     case 'regions':
-      geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM1_simplified_with_psgc.geojson`
+      geoJsonPath = `${basePath}data/gadm41_PHL_1.json`
       break
     case 'provinces':
-      geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM2_simplified_with_psgc.geojson`
+      geoJsonPath = `${basePath}data/gadm41_PHL_1.json`
       break
     case 'cities':
-      geoJsonPath = `${basePath}data/geoBoundaries-PHL-ADM3_simplified_with_psgc.geojson`
+      geoJsonPath = `${basePath}data/gadm41_PHL_2.json`
       break
   }
   
@@ -85,80 +97,86 @@ async function loadGeoJSONData() {
   const geoData = await loadGeoJSON(geoJsonPath)
   console.log('GeoJSON loaded, features:', geoData?.features?.length)
   
-  // Filter features based on focus and selected subdivisions
   let filteredGeoData = geoData
   
-  if (dataStore.mapFocus && dataStore.selectedSubdivisions.length > 0) {
-    // Show parent region/province + selected subdivisions
-    console.log('Loading subdivisions for:', dataStore.mapFocus)
-    console.log('Selected subdivisions:', dataStore.selectedSubdivisions)
-    console.log('Current map level:', dataStore.mapLevel)
-    
-    const parentFeatures = geoData.features.filter(feature => {
-      const locationName = getLocationName(feature)
-      return locationName === dataStore.mapFocus
+  if (dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+    const focusRegion = dataStore.mapFocus
+    const regionFeatures = (geoData.features || []).filter(feature => {
+      const props = feature.properties || {}
+      return normalizeGADMName(props.NAME_0) === focusRegion
     })
-    
-    console.log('Parent features found:', parentFeatures.length)
-    
-    // Load subdivision level GeoJSON
-    let subdivisionPath = ''
-    if (dataStore.mapLevel === 'regions') {
-      subdivisionPath = `${basePath}data/geoBoundaries-PHL-ADM2_simplified_with_psgc.geojson`
-      console.log('Loading provinces (ADM2) for region')
-    } else if (dataStore.mapLevel === 'provinces') {
-      subdivisionPath = `${basePath}data/geoBoundaries-PHL-ADM3_simplified_with_psgc.geojson`
-      console.log('Loading cities (ADM3) for province')
-    }
-    
-    if (subdivisionPath) {
-      const subdivisionData = await loadGeoJSON(subdivisionPath)
-      console.log('Subdivision data loaded, total features:', subdivisionData.features.length)
-      
-      const selectedSubFeatures = subdivisionData.features.filter(feature => {
-        const locationName = getLocationName(feature)
-        
-        // Check exact match first
-        let isSelected = dataStore.selectedSubdivisions.includes(locationName)
-        
-        // If not found, try normalized matching (remove "City" suffix)
-        if (!isSelected) {
-          const normalizedLocation = locationName.replace(/\s+City$/i, '').trim()
-          isSelected = dataStore.selectedSubdivisions.some(selected => {
-            const normalizedSelected = selected.replace(/\s+City$/i, '').trim()
-            return normalizedLocation.toLowerCase() === normalizedSelected.toLowerCase()
+    const isNCR = focusRegion.includes('National Capital Region')
+    if (dataStore.selectedSubdivisions && dataStore.selectedSubdivisions.length > 0) {
+      if (isNCR) {
+        // NCR has no provinces; treat its 16 cities + 1 municipality as subdivisions
+        const subdivisionPath = `${basePath}data/gadm41_PHL_2.json`
+        console.log('Loading GADM level-2 for NCR city/municipality subdivisions')
+        const subdivisionData = await loadGeoJSON(subdivisionPath)
+        const selectedSet = new Set(
+          dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
+        )
+        const ncrParentName = normalizeGADMName('MetropolitanManila')
+        const selectedSubFeatures = (subdivisionData.features || []).filter(feature => {
+          const props = feature.properties || {}
+          const parentName = normalizeGADMName(props.NAME_1)
+          const cityName = normalizeGADMName(props.NAME_2)
+          return parentName === ncrParentName && selectedSet.has(cityName)
+        })
+        filteredGeoData = {
+          ...geoData,
+          features: [...regionFeatures, ...selectedSubFeatures]
+        }
+      } else {
+        const selectedSet = new Set(
+          dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
+        )
+        filteredGeoData = {
+          ...geoData,
+          features: regionFeatures.filter(feature => {
+            const props = feature.properties || {}
+            const provName = normalizeGADMName(props.NAME_1)
+            return selectedSet.has(provName)
           })
         }
-        
-        if (isSelected) {
-          console.log('Found selected subdivision:', locationName)
-        }
-        return isSelected
+      }
+    } else {
+      filteredGeoData = {
+        ...geoData,
+        features: regionFeatures
+      }
+    }
+    console.log('Filtered region features:', filteredGeoData.features.length)
+  } else if (dataStore.mapLevel === 'provinces' && dataStore.mapFocus) {
+    const focusProvince = dataStore.mapFocus
+    const parentFeatures = (geoData.features || []).filter(feature => {
+      const props = feature.properties || {}
+      return normalizeGADMName(props.NAME_1) === focusProvince
+    })
+    if (dataStore.selectedSubdivisions && dataStore.selectedSubdivisions.length > 0) {
+      const subdivisionPath = `${basePath}data/gadm41_PHL_2.json`
+      console.log('Loading GADM level-2 for province subdivisions')
+      const subdivisionData = await loadGeoJSON(subdivisionPath)
+      const selectedSet = new Set(
+        dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
+      )
+      const selectedSubFeatures = (subdivisionData.features || []).filter(feature => {
+        const props = feature.properties || {}
+        const provName = normalizeGADMName(props.NAME_1)
+        const cityName = normalizeGADMName(props.NAME_2)
+        return provName === focusProvince && selectedSet.has(cityName)
       })
-      
-      console.log('Selected subdivision features found:', selectedSubFeatures.length)
-      
-      // Combine parent and selected subdivisions
       filteredGeoData = {
         ...geoData,
         features: [...parentFeatures, ...selectedSubFeatures]
       }
+      console.log('Parent + subdivision features:', filteredGeoData.features.length)
     } else {
       filteredGeoData = {
         ...geoData,
         features: parentFeatures
       }
+      console.log('Province focus features:', filteredGeoData.features.length)
     }
-    console.log('Total filtered features (parent + subdivisions):', filteredGeoData.features.length)
-  } else if (dataStore.mapFocus && dataStore.mapLevel !== 'country') {
-    filteredGeoData = {
-      ...geoData,
-      features: geoData.features.filter(feature => {
-        const locationName = getLocationName(feature)
-        return locationName === dataStore.mapFocus
-      })
-    }
-    console.log('Filtered features:', filteredGeoData.features.length)
   }
   
   dataStore.setGeoData(filteredGeoData)
@@ -485,7 +503,7 @@ function calculateLabelPositions(locations, zoom) {
   const mapBounds = map.value.getBounds()
   
   // Use the center of the visible features as reference point
-  // If there's a single focused location, use its bounds center
+  // If there's a single focused location, use its bounds
   let referenceCenter
   if (locations.length === 1 && locations[0].feature) {
     // For single focused location, use the feature's bounds
@@ -581,11 +599,12 @@ function setupCalloutInteractions(calloutId, marker, line, center) {
 
 // Helper function to get location name from feature properties
 function getLocationName(feature) {
-  const props = feature.properties
-  // Try common property names used in geoBoundaries
-  return props.shapeName || props.shapeGroup || props.shapeID || 
-         props.name || props.region || props.province || props.city || 
-         'Unknown'
+  const props = feature.properties || {}
+  if (props.NAME_2) return normalizeGADMName(props.NAME_2)
+  if (props.NAME_1) return normalizeGADMName(props.NAME_1)
+  if (props.NAME_0) return normalizeGADMName(props.NAME_0)
+  if (props.COUNTRY) return normalizeGADMName(props.COUNTRY)
+  return 'Unknown'
 }
 
 // Helper function to calculate center of a single feature's geometry
@@ -685,6 +704,12 @@ watch(() => dataStore.mapFocus, async (newFocus, oldFocus) => {
   }
   await loadGeoJSONData()
 })
+
+// Watch for selected subdivisions changes to update boundaries
+watch(() => dataStore.selectedSubdivisions, async () => {
+  console.log('Selected subdivisions changed:', dataStore.selectedSubdivisions)
+  await loadGeoJSONData()
+}, { deep: true })
 
 // Watch for callout labels changes
 watch(() => dataStore.showCalloutLabels, () => {

@@ -61,6 +61,17 @@ const dataStore = useDataStore()
 
 const colorScale = computed(() => dataStore.colorScale)
 
+function normalizeGADMName(name) {
+	const s = String(name || '')
+	return s
+		.replace(/_/g, ' ')
+		.replace(/([a-z])([A-Z])/g, '$1 $2')
+		.replace(/([A-Za-z])(\d)/g, '$1 $2')
+		.replace(/(\d)([A-Za-z])/g, '$1 $2')
+		.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+		.trim()
+}
+
 // Filter categories to only show those visible on the map
 const visibleCategories = computed(() => {
   if (!dataStore.legendField || !dataStore.legendCategories.length) {
@@ -73,17 +84,15 @@ const visibleCategories = computed(() => {
   if (dataStore.geoData && dataStore.geoData.features) {
     // Extract location names from currently loaded GeoJSON features
     visibleLocationNames = dataStore.geoData.features.map(feature => {
-      const props = feature.properties
-      return props.shapeName || props.shapeGroup || props.shapeID || 
-             props.name || props.region || props.province || props.city || ''
+      const props = feature.properties || {}
+      const rawName = props.NAME_2 || props.NAME_1 || props.NAME_0 || props.COUNTRY ||
+        props.shapeName || props.shapeGroup || props.shapeID || 
+        props.name || props.region || props.province || props.city || ''
+      return normalizeGADMName(rawName)
     }).filter(Boolean)
     
-    // If subdivisions are selected, filter to only those
-    if (dataStore.selectedSubdivisions.length > 0) {
-      visibleLocationNames = visibleLocationNames.filter(name => 
-        dataStore.selectedSubdivisions.includes(name)
-      )
-    }
+    // Note: selectedSubdivisions now store PSGC codes; geoData is already filtered
+    // to include parent + selected subdivisions, so no additional filtering by names here.
   }
   
   // If no GeoJSON loaded or no visible locations, show all categories

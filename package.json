@@ -12,6 +12,7 @@
     "annotate:psgc:inplace": "node ./scripts/annotate_psgc.js --in-place"
   },
   "dependencies": {
+    "@jobuntux/psgc": "^0.2.1",
     "@vicons/ionicons5": "^0.13.0",
     "axios": "^1.13.2",
     "echarts": "^6.0.0",

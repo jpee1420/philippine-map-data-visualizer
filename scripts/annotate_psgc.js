@@ -29,6 +29,14 @@ function getFeatureName(f) {
   )
 }
 
+// Convert 9-digit PSGC code to 10-digit by inserting a '0' after the first 2 digits
+function code9to10(code) {
+  const s = String(code || '').replace(/[^0-9]/g, '')
+  if (s.length === 10) return s
+  if (s.length === 9) return s.slice(0, 2) + '0' + s.slice(2)
+  return s
+}
+
 async function loadJSON(file) {
   const content = await fs.readFile(file, 'utf8')
   return JSON.parse(content)
@@ -60,25 +68,56 @@ function buildProvinceIndex(rows) {
   return idx
 }
 
-function buildMuniCityIndex(rows, provinces) {
+function buildDistrictIndex(rows) {
+  const idx = new Map()
+  for (const r of rows) {
+    const nk = normalize(r.name)
+    if (!nk) continue
+    const p10 = r.psgc10DigitCode && String(r.psgc10DigitCode).trim() !== ''
+      ? r.psgc10DigitCode
+      : code9to10(r.code)
+    if (!idx.has(nk)) idx.set(nk, { psgc10: p10, code: r.code })
+  }
+  return idx
+}
+
+function buildMuniCityIndex(rows, provinces, districts) {
   const idx = new Map()
   const provByCode = new Map()
   for (const p of provinces) {
     provByCode.set(p.code, normalize(p.name))
   }
+  const distByCode = new Map()
+  for (const d of districts || []) {
+    distByCode.set(d.code, normalize(d.name))
+  }
   for (const r of rows) {
     const muniNk = normalize(r.name)
-    const provNk = provByCode.get(r.provinceCode) || ''
+    const provNk = provByCode.get(r.provinceCode) || distByCode.get(r.districtCode) || ''
     const combined = `${muniNk}|${provNk}`
     // Use combined key to avoid collisions across provinces
     if (muniNk && !idx.has(combined)) idx.set(combined, { psgc10: r.psgc10DigitCode, code: r.code })
     // Also store name-only fallback if unique
-    if (muniNk && !idx.has(muniNk)) idx.set(muniNk, { psgc10: r.psgc10DigitCode, code: r.code })
+    if (muniNk) {
+      const candidate = { psgc10: r.psgc10DigitCode, code: r.code, isCity: !!r.isCity, regionCode: r.regionCode }
+      const existing = idx.get(muniNk)
+      if (!existing) {
+        idx.set(muniNk, candidate)
+      } else {
+        const existingIsCity = !!existing.isCity
+        const existingIsNCR = String(existing.regionCode) === '130000000'
+        const candidateIsNCR = String(candidate.regionCode) === '130000000'
+        // Prefer city over municipality; prefer NCR over non-NCR
+        if ((!existingIsCity && candidate.isCity) || (!existingIsNCR && candidateIsNCR)) {
+          idx.set(muniNk, candidate)
+        }
+      }
+    }
   }
   return idx
 }
 
-async function annotateFile(geoFile, index, label) {
+async function annotateFile(geoFile, index, label, fallbackIndex = null) {
   const fullPath = path.join(dataDir, geoFile)
   const geo = await loadJSON(fullPath)
 
@@ -96,6 +135,10 @@ async function annotateFile(geoFile, index, label) {
       const parentNk = normalize(parentName)
       const combined = `${nk}|${parentNk}`
       m = index.get(combined) || m
+    }
+    // For ADM2 (NCR districts), try fallback index (districts) by name
+    if (!m && label === 'ADM2' && fallbackIndex) {
+      m = fallbackIndex.get(nk) || m
     }
     if (m) {
       f.properties = f.properties || {}
@@ -130,19 +173,22 @@ async function main() {
     const regionsPath = path.join(dataDir, 'regions.json')
     const provincesPath = path.join(dataDir, 'provinces.json')
     const municitiesPath = path.join(dataDir, 'municities.json')
+    const districtsPath = path.join(dataDir, 'districts.json')
 
-    const [regions, provinces, municities] = await Promise.all([
+    const [regions, provinces, municities, districts] = await Promise.all([
       loadJSON(regionsPath),
       loadJSON(provincesPath),
-      loadJSON(municitiesPath)
+      loadJSON(municitiesPath),
+      loadJSON(districtsPath)
     ])
 
     const regionIdx = buildRegionIndex(regions)
     const provinceIdx = buildProvinceIndex(provinces)
-    const muniCityIdx = buildMuniCityIndex(municities, provinces)
+    const muniCityIdx = buildMuniCityIndex(municities, provinces, districts)
+    const districtIdx = buildDistrictIndex(districts)
 
     await annotateFile('geoBoundaries-PHL-ADM1_simplified.geojson', regionIdx, 'ADM1')
-    await annotateFile('geoBoundaries-PHL-ADM2_simplified.geojson', provinceIdx, 'ADM2')
+    await annotateFile('geoBoundaries-PHL-ADM2_simplified.geojson', provinceIdx, 'ADM2', districtIdx)
     await annotateFile('geoBoundaries-PHL-ADM3_simplified.geojson', muniCityIdx, 'ADM3')
 
     console.log('Done.')

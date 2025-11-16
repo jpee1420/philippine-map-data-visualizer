@@ -52,11 +52,11 @@
           <div class="checkbox-list">
             <n-checkbox
               v-for="item in subdivisions"
-              :key="item"
-              :checked="isSubdivisionChecked(item)"
-              @update:checked="(checked) => toggleSubdivision(item, checked)"
+              :key="item.code"
+              :checked="isSubdivisionChecked(item.code)"
+              @update:checked="(checked) => toggleSubdivision(item.code, checked)"
             >
-              {{ item }}
+              {{ item.name }}
             </n-checkbox>
           </div>
         </div>
@@ -66,11 +66,11 @@
           <div class="checkbox-list">
             <n-checkbox
               v-for="item in subdivisions"
-              :key="item"
-              :checked="isSubdivisionChecked(item)"
-              @update:checked="(checked) => toggleSubdivision(item, checked)"
+              :key="item.code"
+              :checked="isSubdivisionChecked(item.code)"
+              @update:checked="(checked) => toggleSubdivision(item.code, checked)"
             >
-              {{ item }}
+              {{ item.name }}
             </n-checkbox>
           </div>
         </div>
@@ -88,7 +88,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { NCard, NSpace, NText, NRadioGroup, NRadio, NSelect, NAlert, NCheckbox } from 'naive-ui'
 import { useDataStore } from '@/store/dataStore'
 
@@ -106,6 +106,17 @@ const availableProvinces = ref([])
 // Subdivisions within current focus
 const subdivisions = ref([])
 const selectedSubdivisionSet = ref(new Set())
+
+function normalizeGADMName(name) {
+	const s = String(name || '')
+	return s
+		.replace(/_/g, ' ')
+		.replace(/([a-z])([A-Z])/g, '$1 $2')
+		.replace(/([A-Za-z])(\d)/g, '$1 $2')
+		.replace(/(\d)([A-Za-z])/g, '$1 $2')
+		.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+		.trim()
+}
 
 // Computed options for selects
 const regionOptions = computed(() => 
@@ -164,12 +175,13 @@ function handleProvinceSelect(province) {
 // City select removed
 
 function isSubdivisionChecked(item) {
-  return selectedSubdivisionSet.value.has(item)
+  return selectedSubdivisionSet.value.has(String(item))
 }
 
 function toggleSubdivision(item, checked) {
-  if (checked) selectedSubdivisionSet.value.add(item)
-  else selectedSubdivisionSet.value.delete(item)
+  const key = String(item)
+  if (checked) selectedSubdivisionSet.value.add(key)
+  else selectedSubdivisionSet.value.delete(key)
   dataStore.setSelectedSubdivisions(Array.from(selectedSubdivisionSet.value))
 }
 
@@ -180,58 +192,103 @@ function clearSubdivisions() {
 }
 
 async function loadSubdivisions() {
-  const basePath = import.meta.env.BASE_URL || '/'
-  if (selectedLevel.value === 'regions' && selectedRegion.value) {
-    const resp = await fetch(`${basePath}data/geoBoundaries-PHL-ADM2_simplified_with_psgc.geojson`)
-    const adm2 = await resp.json()
-    const focusNorm = selectedRegion.value.toLowerCase().trim()
-    const list = adm2.features
-      .filter(f => {
-        const props = f.properties || {}
-        const group = (props.shapeGroup || props.region || '').toLowerCase().trim()
-        return group === focusNorm
-      })
-      .map(f => f.properties.shapeName)
-      .filter(Boolean)
-    subdivisions.value = Array.from(new Set(list)).sort()
-  } else if (selectedLevel.value === 'provinces' && selectedProvince.value) {
-    const resp = await fetch(`${basePath}data/geoBoundaries-PHL-ADM3_simplified_with_psgc.geojson`)
-    const adm3 = await resp.json()
-    const focusNorm = selectedProvince.value.toLowerCase().trim()
-    const list = adm3.features
-      .filter(f => {
-        const props = f.properties || {}
-        const group = (props.shapeGroup || props.province || '').toLowerCase().trim()
-        return group === focusNorm
-      })
-      .map(f => f.properties.shapeName)
-      .filter(Boolean)
-    subdivisions.value = Array.from(new Set(list)).sort()
-  } else {
-    subdivisions.value = []
-  }
+	const basePath = import.meta.env.BASE_URL || '/'
+	if (selectedLevel.value === 'regions' && selectedRegion.value) {
+		const isNCR = selectedRegion.value.includes('National Capital Region')
+		if (isNCR) {
+			try {
+				const resp = await fetch(`${basePath}data/gadm41_PHL_2.json`)
+				const adm2 = await resp.json()
+				const ncrParentName = normalizeGADMName('MetropolitanManila')
+				const items = (adm2.features || [])
+					.filter(f => {
+						const p = f.properties || {}
+						return normalizeGADMName(p.NAME_1) === ncrParentName
+					})
+					.map(f => {
+						const p = f.properties || {}
+						const name = normalizeGADMName(p.NAME_2)
+						return { code: name, name }
+					})
+					.filter(it => it.name)
+				const unique = new Map(items.map(it => [it.code, it]))
+				subdivisions.value = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
+			} catch (e) {
+				console.warn('Failed to load GADM level-2 for NCR city/municipality subdivisions:', e)
+				subdivisions.value = []
+			}
+		} else {
+			try {
+				const resp = await fetch(`${basePath}data/gadm41_PHL_1.json`)
+				const adm1 = await resp.json()
+				const items = (adm1.features || [])
+					.filter(f => {
+						const p = f.properties || {}
+						return normalizeGADMName(p.NAME_0) === selectedRegion.value
+					})
+					.map(f => {
+						const p = f.properties || {}
+						const name = normalizeGADMName(p.NAME_1)
+						return { code: name, name }
+					})
+					.filter(it => it.name)
+				const unique = new Map(items.map(it => [it.code, it]))
+				subdivisions.value = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
+			} catch (e) {
+				console.warn('Failed to load GADM level-1 for region subdivisions:', e)
+				subdivisions.value = []
+			}
+		}
+	} else if (selectedLevel.value === 'provinces' && selectedProvince.value) {
+		try {
+			const resp = await fetch(`${basePath}data/gadm41_PHL_2.json`)
+			const adm2 = await resp.json()
+			const items = (adm2.features || [])
+				.filter(f => {
+					const p = f.properties || {}
+					return normalizeGADMName(p.NAME_1) === selectedProvince.value
+				})
+				.map(f => {
+					const p = f.properties || {}
+					const name = normalizeGADMName(p.NAME_2)
+					return { code: name, name }
+				})
+				.filter(it => it.name)
+			const unique = new Map(items.map(it => [it.code, it]))
+			subdivisions.value = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
+		} catch (e) {
+			console.warn('Failed to load GADM level-2 for province subdivisions:', e)
+			subdivisions.value = []
+		}
+	} else {
+		subdivisions.value = []
+	}
 }
-// City subdivisions removed
 
+async function loadRegionProvinceLists() {
+	const basePath = import.meta.env.BASE_URL || '/'
+	try {
+		const resp = await fetch(`${basePath}data/gadm41_PHL_1.json`)
+		const adm1 = await resp.json()
+		const regions = new Set()
+		const provinces = new Set()
+		;(adm1.features || []).forEach(f => {
+			const p = f.properties || {}
+			if (p.NAME_0) regions.add(normalizeGADMName(p.NAME_0))
+			if (p.NAME_1) provinces.add(normalizeGADMName(p.NAME_1))
+		})
+		availableRegions.value = Array.from(regions).sort()
+		availableProvinces.value = Array.from(provinces).sort()
+	} catch (e) {
+		console.warn('Failed to load GADM level-1 for selector lists:', e)
+		availableRegions.value = []
+		availableProvinces.value = []
+	}
+}
 
-// Watch for GeoJSON data to extract available locations
-watch(() => dataStore.geoData, (geoData) => {
-  if (!geoData || !geoData.features) return
-  
-  const locations = new Set()
-  geoData.features.forEach(feature => {
-    const props = feature.properties
-    const name = props.shapeName || props.shapeGroup || props.name || props.region || props.province || props.city
-    if (name) locations.add(name)
-  })
-  
-  // Update available locations based on current level
-  if (selectedLevel.value === 'regions') {
-    availableRegions.value = Array.from(locations).sort()
-  } else if (selectedLevel.value === 'provinces') {
-    availableProvinces.value = Array.from(locations).sort()
-  }
-}, { immediate: true })
+onMounted(() => {
+	loadRegionProvinceLists()
+})
 
 // Sync with store map level
 watch(() => dataStore.mapLevel, (level) => {
@@ -253,5 +310,17 @@ watch([selectedLevel, selectedRegion, selectedProvince], () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.checkbox-list :deep(.n-checkbox) {
+  display: block;
+  white-space: normal;
 }
 </style>
