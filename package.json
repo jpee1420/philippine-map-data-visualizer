@@ -9,11 +9,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "annotate:psgc": "node ./scripts/annotate_psgc.js",
-    "annotate:psgc:inplace": "node ./scripts/annotate_psgc.js --in-place"
+    "annotate:psgc:inplace": "node ./scripts/annotate_psgc.js --in-place",
+    "generate:regions": "node ./scripts/generate_regions_from_provinces.js"
   },
   "dependencies": {
     "@jobuntux/psgc": "^0.2.1",
-    "@turf/turf": "^6.5.0",
     "@vicons/ionicons5": "^0.13.0",
     "axios": "^1.13.2",
     "echarts": "^6.0.0",
@@ -27,6 +27,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@turf/union": "^6.5.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "vite": "^7.2.2"
   }

@@ -11,8 +11,8 @@
 
 <script setup>
 import { ref } from 'vue'
-import MapView from '@/components/MapView.vue'
-import Legend from '@/components/Legend.vue'
+import MapView from '@/components/map/MapView.vue'
+import Legend from '@/components/map/Legend.vue'
 import FilterBar from '@/components/common/FilterBar.vue'
 
 const mapViewRef = ref(null)

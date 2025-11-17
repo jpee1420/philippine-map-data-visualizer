@@ -25,8 +25,8 @@ import { ref, computed, watch } from 'vue'
 import { NIcon } from 'naive-ui'
 import { Funnel as FilterIcon } from '@vicons/ionicons5'
 import { useDataStore } from '@/store/dataStore'
-import MapSelector from '@/components/MapSelector.vue'
-import DataUploader from '@/components/DataUploader.vue'
+import MapSelector from '@/components/map/MapSelector.vue'
+import DataUploader from '@/components/panels/DataUploader.vue'
 
 const dataStore = useDataStore()
 
