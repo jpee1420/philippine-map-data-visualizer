@@ -11,16 +11,11 @@
 
 <script setup>
 import { ref } from 'vue'
-import { NButton, NButtonGroup, NIcon } from 'naive-ui'
-import { Search as SearchIcon, Expand as ExpandIcon } from '@vicons/ionicons5'
 import MapView from '@/components/MapView.vue'
 import Legend from '@/components/Legend.vue'
 import FilterBar from '@/components/common/FilterBar.vue'
 
-const zoomLevel = ref(100)
 const mapViewRef = ref(null)
-
-defineEmits(['zoom-in', 'zoom-out', 'fullscreen'])
 
 // Expose methods
 defineExpose({

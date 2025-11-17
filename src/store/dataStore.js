@@ -131,7 +131,7 @@ export const useDataStore = defineStore('dataStore', {
       city: null 
     },
     availableMetrics: [],
-    mapLevel: 'country', // 'country', 'regions', 'provinces', or 'cities'
+    mapLevel: 'country', // 'country', 'regions', or 'provinces'
     mapFocus: null, // Specific location to focus on (e.g., "Ilocos Region")
     selectedSubdivisions: [], // Array of selected subdivisions to show boundaries
     hideInternalBoundaries: false, // Hide internal boundaries
@@ -144,32 +144,7 @@ export const useDataStore = defineStore('dataStore', {
   }),
   
   getters: {
-    regions: (state) => {
-      const uniqueRegions = [...new Set(state.dataset.map(row => row.region).filter(Boolean))]
-      return uniqueRegions.sort()
-    },
-    
-    provinces: (state) => {
-      let data = state.dataset
-      if (state.filters.region) {
-        data = data.filter(row => row.region === state.filters.region)
-      }
-      const uniqueProvinces = [...new Set(data.map(row => row.province).filter(Boolean))]
-      return uniqueProvinces.sort()
-    },
-    
-    cities: (state) => {
-      let data = state.dataset
-      if (state.filters.region) {
-        data = data.filter(row => row.region === state.filters.region)
-      }
-      if (state.filters.province) {
-        data = data.filter(row => row.province === state.filters.province)
-      }
-      const uniqueCities = [...new Set(data.map(row => row.city).filter(Boolean))]
-      return uniqueCities.sort()
-    },
-    
+
     metricStats: (state) => {
       if (!state.selectedMetric || state.filteredData.length === 0) {
         return { min: 0, max: 100, avg: 50, sum: 0 }

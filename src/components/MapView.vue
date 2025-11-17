@@ -14,6 +14,10 @@ import { NSpin } from 'naive-ui'
 import L from 'leaflet'
 import { useDataStore } from '@/store/dataStore'
 import { loadGeoJSON } from '@/utils/geoUtils'
+import { normalizeGADMName } from '@/utils/nameUtils'
+import { GADM_PATHS, GADM_FILES, NCR_REGION_NAME, NCR_PARENT_NAME } from '@/config/mapConfig'
+import { debug } from '@/utils/logger'
+import * as turf from '@turf/turf'
 
 const dataStore = useDataStore()
 const mapElement = ref(null)
@@ -49,7 +53,7 @@ onMounted(async () => {
       }
     })
     
-    console.log('Map initialized successfully')
+    debug('[MapView] Map initialized successfully')
     
     // Load GeoJSON based on current level
     await loadGeoJSONData()
@@ -60,92 +64,91 @@ onMounted(async () => {
   }
 })
 
-// Normalize fused GADM names like "SantaBarbara" -> "Santa Barbara"
-function normalizeGADMName(name) {
-  const s = String(name || '')
-  return s
-    .replace(/_/g, ' ')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/([A-Za-z])(\d)/g, '$1 $2')
-    .replace(/(\d)([A-Za-z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-    .trim()
-}
-
 // Load GeoJSON data based on map level
 async function loadGeoJSONData() {
   const basePath = import.meta.env.BASE_URL || '/'
-  let geoJsonPath = `${basePath}data/gadm41_PHL_0.json` // Default to country
+  let geoJsonPath = `${basePath}${GADM_PATHS.country}` // Default to country
   
   // Determine which GeoJSON to load based on map level
   switch (dataStore.mapLevel) {
     case 'country':
-      geoJsonPath = `${basePath}data/gadm41_PHL_0.json`
+      geoJsonPath = `${basePath}${GADM_PATHS.country}`
       break
     case 'regions':
-      geoJsonPath = `${basePath}data/gadm41_PHL_1.json`
+      geoJsonPath = `${basePath}${GADM_PATHS.regions}`
       break
     case 'provinces':
-      geoJsonPath = `${basePath}data/gadm41_PHL_1.json`
-      break
-    case 'cities':
-      geoJsonPath = `${basePath}data/gadm41_PHL_2.json`
+      geoJsonPath = `${basePath}${GADM_PATHS.provinces}`
       break
   }
   
-  console.log('Loading GeoJSON from:', geoJsonPath)
+  debug('[MapView] Loading GeoJSON from:', geoJsonPath)
   const geoData = await loadGeoJSON(geoJsonPath)
-  console.log('GeoJSON loaded, features:', geoData?.features?.length)
+  debug('[MapView] GeoJSON loaded, features:', geoData?.features?.length)
   
   let filteredGeoData = geoData
   
-  if (dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
-    const focusRegion = dataStore.mapFocus
-    const regionFeatures = (geoData.features || []).filter(feature => {
-      const props = feature.properties || {}
-      return normalizeGADMName(props.NAME_0) === focusRegion
-    })
-    const isNCR = focusRegion.includes('National Capital Region')
-    if (dataStore.selectedSubdivisions && dataStore.selectedSubdivisions.length > 0) {
-      if (isNCR) {
-        // NCR has no provinces; treat its 16 cities + 1 municipality as subdivisions
-        const subdivisionPath = `${basePath}data/gadm41_PHL_2.json`
-        console.log('Loading GADM level-2 for NCR city/municipality subdivisions')
-        const subdivisionData = await loadGeoJSON(subdivisionPath)
-        const selectedSet = new Set(
-          dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
-        )
-        const ncrParentName = normalizeGADMName('MetropolitanManila')
-        const selectedSubFeatures = (subdivisionData.features || []).filter(feature => {
-          const props = feature.properties || {}
-          const parentName = normalizeGADMName(props.NAME_1)
-          const cityName = normalizeGADMName(props.NAME_2)
-          return parentName === ncrParentName && selectedSet.has(cityName)
-        })
-        filteredGeoData = {
-          ...geoData,
-          features: [...regionFeatures, ...selectedSubFeatures]
+  if (dataStore.mapLevel === 'regions') {
+    // Build region-level geometries by dissolving province polygons per region
+    const regionsGeoData = buildRegionsFromProvinces(geoData)
+
+    if (!dataStore.mapFocus) {
+      // No specific region selected – show all regions as single polygons
+      filteredGeoData = regionsGeoData
+    } else {
+      const focusRegion = dataStore.mapFocus
+      const regionFeatures = (regionsGeoData.features || []).filter(feature => {
+        const props = feature.properties || {}
+        return normalizeGADMName(props.NAME_0) === focusRegion
+      })
+
+      const isNCR = focusRegion.includes(NCR_REGION_NAME)
+
+      if (dataStore.selectedSubdivisions && dataStore.selectedSubdivisions.length > 0) {
+        if (isNCR) {
+          // NCR has no provinces; treat its 16 cities + 1 municipality as subdivisions
+          const subdivisionPath = `${basePath}${GADM_FILES.ADM2}`
+          debug('[MapView] Loading GADM level-2 for NCR city/municipality subdivisions')
+          const subdivisionData = await loadGeoJSON(subdivisionPath)
+          const selectedSet = new Set(
+            dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
+          )
+          const ncrParentName = normalizeGADMName(NCR_PARENT_NAME)
+          const selectedSubFeatures = (subdivisionData.features || []).filter(feature => {
+            const props = feature.properties || {}
+            const parentName = normalizeGADMName(props.NAME_1)
+            const cityName = normalizeGADMName(props.NAME_2)
+            return parentName === ncrParentName && selectedSet.has(cityName)
+          })
+          filteredGeoData = {
+            ...regionsGeoData,
+            features: [...regionFeatures, ...selectedSubFeatures]
+          }
+        } else {
+          // Non-NCR: show region outline + selected province polygons
+          const selectedSet = new Set(
+            dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
+          )
+          const provinceSubFeatures = (geoData.features || []).filter(feature => {
+            const props = feature.properties || {}
+            const regionName = normalizeGADMName(props.NAME_0)
+            const provName = normalizeGADMName(props.NAME_1)
+            return regionName === focusRegion && selectedSet.has(provName)
+          })
+          filteredGeoData = {
+            ...regionsGeoData,
+            features: [...regionFeatures, ...provinceSubFeatures]
+          }
         }
       } else {
-        const selectedSet = new Set(
-          dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
-        )
+        // Only region outline
         filteredGeoData = {
-          ...geoData,
-          features: regionFeatures.filter(feature => {
-            const props = feature.properties || {}
-            const provName = normalizeGADMName(props.NAME_1)
-            return selectedSet.has(provName)
-          })
+          ...regionsGeoData,
+          features: regionFeatures
         }
       }
-    } else {
-      filteredGeoData = {
-        ...geoData,
-        features: regionFeatures
-      }
     }
-    console.log('Filtered region features:', filteredGeoData.features.length)
+    debug('[MapView] Filtered region features:', filteredGeoData.features.length)
   } else if (dataStore.mapLevel === 'provinces' && dataStore.mapFocus) {
     const focusProvince = dataStore.mapFocus
     const parentFeatures = (geoData.features || []).filter(feature => {
@@ -153,8 +156,8 @@ async function loadGeoJSONData() {
       return normalizeGADMName(props.NAME_1) === focusProvince
     })
     if (dataStore.selectedSubdivisions && dataStore.selectedSubdivisions.length > 0) {
-      const subdivisionPath = `${basePath}data/gadm41_PHL_2.json`
-      console.log('Loading GADM level-2 for province subdivisions')
+      const subdivisionPath = `${basePath}${GADM_FILES.ADM2}`
+      debug('[MapView] Loading GADM level-2 for province subdivisions')
       const subdivisionData = await loadGeoJSON(subdivisionPath)
       const selectedSet = new Set(
         dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
@@ -169,13 +172,13 @@ async function loadGeoJSONData() {
         ...geoData,
         features: [...parentFeatures, ...selectedSubFeatures]
       }
-      console.log('Parent + subdivision features:', filteredGeoData.features.length)
+      debug('[MapView] Parent + subdivision features:', filteredGeoData.features.length)
     } else {
       filteredGeoData = {
         ...geoData,
         features: parentFeatures
       }
-      console.log('Province focus features:', filteredGeoData.features.length)
+      debug('[MapView] Province focus features:', filteredGeoData.features.length)
     }
   }
   
@@ -185,7 +188,7 @@ async function loadGeoJSONData() {
 
 // Render GeoJSON with colors
 function renderGeoJSON(geoData) {
-  console.log('Rendering GeoJSON, features:', geoData?.features?.length)
+  debug('[MapView] Rendering GeoJSON, features:', geoData?.features?.length)
   if (!map.value || !geoData) {
     console.warn('Cannot render: map or geoData is null')
     return
@@ -289,7 +292,7 @@ function renderGeoJSON(geoData) {
     }
   }).addTo(map.value)
   
-  console.log('GeoJSON layer added to map')
+  debug('[MapView] GeoJSON layer added to map')
   
   // Fit bounds when a region/province is selected and it's different from last zoomed
   const shouldZoom = dataStore.mapFocus && 
@@ -297,7 +300,7 @@ function renderGeoJSON(geoData) {
                      lastFocusZoomed.value !== dataStore.mapFocus &&
                      !userHasMoved.value // Don't auto-zoom if user has manually moved
   
-  console.log('Should zoom?', shouldZoom, {
+  debug('[MapView] Should zoom?', shouldZoom, {
     mapFocus: dataStore.mapFocus,
     features: geoData.features.length,
     lastZoomed: lastFocusZoomed.value,
@@ -306,14 +309,14 @@ function renderGeoJSON(geoData) {
   
   if (shouldZoom) {
     const bounds = geoLayer.value.getBounds()
-    console.log('Fitting bounds for selection:', dataStore.mapFocus)
-    console.log('Bounds:', bounds)
+    debug('[MapView] Fitting bounds for selection:', dataStore.mapFocus)
+    debug('[MapView] Bounds:', bounds)
     
     // Calculate appropriate zoom based on bounds size
     const boundsSize = bounds.getNorthEast().distanceTo(bounds.getSouthWest())
     const maxZoom = boundsSize < 100000 ? 11 : 10 // Higher zoom for smaller areas
     
-    console.log('Bounds size:', boundsSize, 'Max zoom:', maxZoom)
+    debug('[MapView] Bounds size:', boundsSize, 'Max zoom:', maxZoom)
     
     // Use setTimeout to ensure layer is fully rendered
     setTimeout(() => {
@@ -332,7 +335,7 @@ function renderGeoJSON(geoData) {
         map.value._programmaticMove = false
       }, 600)
       
-      console.log('fitBounds executed for:', dataStore.mapFocus)
+      debug('[MapView] fitBounds executed for:', dataStore.mapFocus)
       lastFocusZoomed.value = dataStore.mapFocus
     }, 50)
   }
@@ -495,6 +498,24 @@ function renderCalloutLabels() {
       setupCalloutInteractions(calloutId, label, line, center)
     }, 100)
   })
+}
+
+// Build region-level polygons by dissolving ADM1 (province) features by region name
+function buildRegionsFromProvinces(adm1GeoData) {
+  if (!adm1GeoData || !adm1GeoData.features) {
+    return adm1GeoData
+  }
+
+  try {
+    const dissolved = turf.dissolve(adm1GeoData, { propertyName: 'NAME_0' })
+    if (!dissolved || !dissolved.features) {
+      return adm1GeoData
+    }
+    return dissolved
+  } catch (e) {
+    console.error('Failed to dissolve provinces into regions:', e)
+    return adm1GeoData
+  }
 }
 
 // Calculate label positions to avoid overlaps

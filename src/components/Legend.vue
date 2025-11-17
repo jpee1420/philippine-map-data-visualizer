@@ -56,21 +56,11 @@
 import { computed } from 'vue'
 import { NCard, NText } from 'naive-ui'
 import { useDataStore } from '@/store/dataStore'
+import { normalizeGADMName } from '@/utils/nameUtils'
 
 const dataStore = useDataStore()
 
 const colorScale = computed(() => dataStore.colorScale)
-
-function normalizeGADMName(name) {
-	const s = String(name || '')
-	return s
-		.replace(/_/g, ' ')
-		.replace(/([a-z])([A-Z])/g, '$1 $2')
-		.replace(/([A-Za-z])(\d)/g, '$1 $2')
-		.replace(/(\d)([A-Za-z])/g, '$1 $2')
-		.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-		.trim()
-}
 
 // Filter categories to only show those visible on the map
 const visibleCategories = computed(() => {

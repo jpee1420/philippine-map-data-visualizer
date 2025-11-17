@@ -91,6 +91,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { NCard, NSpace, NText, NRadioGroup, NRadio, NSelect, NAlert, NCheckbox } from 'naive-ui'
 import { useDataStore } from '@/store/dataStore'
+import { normalizeGADMName } from '@/utils/nameUtils'
+import { NCR_REGION_NAME, NCR_PARENT_NAME, GADM_FILES } from '@/config/mapConfig'
 
 const dataStore = useDataStore()
 
@@ -106,17 +108,6 @@ const availableProvinces = ref([])
 // Subdivisions within current focus
 const subdivisions = ref([])
 const selectedSubdivisionSet = ref(new Set())
-
-function normalizeGADMName(name) {
-	const s = String(name || '')
-	return s
-		.replace(/_/g, ' ')
-		.replace(/([a-z])([A-Z])/g, '$1 $2')
-		.replace(/([A-Za-z])(\d)/g, '$1 $2')
-		.replace(/(\d)([A-Za-z])/g, '$1 $2')
-		.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-		.trim()
-}
 
 // Computed options for selects
 const regionOptions = computed(() => 
@@ -194,12 +185,12 @@ function clearSubdivisions() {
 async function loadSubdivisions() {
 	const basePath = import.meta.env.BASE_URL || '/'
 	if (selectedLevel.value === 'regions' && selectedRegion.value) {
-		const isNCR = selectedRegion.value.includes('National Capital Region')
+		const isNCR = selectedRegion.value.includes(NCR_REGION_NAME)
 		if (isNCR) {
 			try {
-				const resp = await fetch(`${basePath}data/gadm41_PHL_2.json`)
+				const resp = await fetch(`${basePath}${GADM_FILES.ADM2}`)
 				const adm2 = await resp.json()
-				const ncrParentName = normalizeGADMName('MetropolitanManila')
+				const ncrParentName = normalizeGADMName(NCR_PARENT_NAME)
 				const items = (adm2.features || [])
 					.filter(f => {
 						const p = f.properties || {}
@@ -219,7 +210,7 @@ async function loadSubdivisions() {
 			}
 		} else {
 			try {
-				const resp = await fetch(`${basePath}data/gadm41_PHL_1.json`)
+				const resp = await fetch(`${basePath}${GADM_FILES.ADM1}`)
 				const adm1 = await resp.json()
 				const items = (adm1.features || [])
 					.filter(f => {
@@ -241,7 +232,7 @@ async function loadSubdivisions() {
 		}
 	} else if (selectedLevel.value === 'provinces' && selectedProvince.value) {
 		try {
-			const resp = await fetch(`${basePath}data/gadm41_PHL_2.json`)
+			const resp = await fetch(`${basePath}${GADM_FILES.ADM2}`)
 			const adm2 = await resp.json()
 			const items = (adm2.features || [])
 				.filter(f => {
@@ -268,7 +259,7 @@ async function loadSubdivisions() {
 async function loadRegionProvinceLists() {
 	const basePath = import.meta.env.BASE_URL || '/'
 	try {
-		const resp = await fetch(`${basePath}data/gadm41_PHL_1.json`)
+		const resp = await fetch(`${basePath}${GADM_FILES.ADM1}`)
 		const adm1 = await resp.json()
 		const regions = new Set()
 		const provinces = new Set()
