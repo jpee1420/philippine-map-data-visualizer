@@ -154,11 +154,7 @@ export const useDataStore = defineStore('dataStore', {
     selectedMetrics: [], // Array of selected metrics for multi-metric display
     legendField: null, // Categorical field for legend (e.g., gender, nationality)
     legendCategories: [], // Unique categories from legend field
-    filters: { 
-      region: null, 
-      province: null, 
-      city: null 
-    },
+    legendSelected: [], // Selected legend category values for filtering
     availableMetrics: [],
     mapLevel: 'country', // 'country', 'regions', or 'provinces'
     mapFocus: null, // Specific location to focus on (e.g., "Ilocos Region")
@@ -201,7 +197,7 @@ export const useDataStore = defineStore('dataStore', {
       // Normalize headers so we always have region/province/city fields regardless of input casing
       this.dataset = normalizeDatasetColumns(data)
       this.detectMetrics()
-      this.applyFilters()
+      this.applyLegendFilter()
     },
     
     setGeoData(geo) {
@@ -229,37 +225,34 @@ export const useDataStore = defineStore('dataStore', {
       this.updateColorScale()
     },
     
-    setFilter(type, value) {
-      this.filters[type] = value
-      
-      // Reset dependent filters
-      if (type === 'region') {
-        this.filters.province = null
-        this.filters.city = null
-      } else if (type === 'province') {
-        this.filters.city = null
+    // Legend-based filtering
+    applyLegendFilter() {
+      if (this.legendField && Array.isArray(this.legendSelected) && this.legendSelected.length > 0) {
+        const selectedSet = new Set(this.legendSelected.map(v => String(v)))
+        this.filteredData = this.dataset.filter(row => selectedSet.has(String(row[this.legendField])))
+      } else {
+        // No legend filter -> use full dataset
+        this.filteredData = this.dataset.slice()
       }
-      
-      this.applyFilters()
-    },
-    
-    clearFilters() {
-      this.filters = {
-        region: null,
-        province: null,
-        city: null
-      }
-      this.applyFilters()
-    },
-    
-    applyFilters() {
-      this.filteredData = this.dataset.filter(row => {
-        return (!this.filters.region || row.region === this.filters.region) &&
-               (!this.filters.province || row.province === this.filters.province) &&
-               (!this.filters.city || row.city === this.filters.city)
-      })
-      
       this.updateColorScale()
+    },
+    
+    setLegendSelections(values) {
+      this.legendSelected = Array.isArray(values) ? values : []
+      this.applyLegendFilter()
+    },
+    
+    toggleLegendSelection(value) {
+      const val = String(value)
+      const set = new Set(this.legendSelected.map(v => String(v)))
+      if (set.has(val)) set.delete(val); else set.add(val)
+      this.legendSelected = Array.from(set)
+      this.applyLegendFilter()
+    },
+    
+    clearLegendSelections() {
+      this.legendSelected = []
+      this.applyLegendFilter()
     },
     
     updateColorScale() {
@@ -319,7 +312,8 @@ export const useDataStore = defineStore('dataStore', {
     },
     
     getColorForValue(value) {
-      if (value === null || value === undefined) return '#cccccc'
+      // No metric -> render polygon with white fill; borders are handled in MapView
+      if (value === null || value === undefined) return '#ffffff'
       
       const { min, max, colors } = this.colorScale
       const normalized = (value - min) / (max - min || 1)

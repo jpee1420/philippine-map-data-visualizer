@@ -2,23 +2,30 @@
   <div class="legend" v-if="showLegend">
     <n-card size="small" :bordered="false">
       <!-- Categorical Legend -->
-      <div v-if="dataStore.legendField && visibleCategories.length > 0" class="legend-content">
-        <n-text strong style="margin-bottom: 12px; display: block;">
-          {{ dataStore.legendField }}
-        </n-text>
+      <div v-if="dataStore.legendField && allCategories.length > 0" class="legend-content">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <n-text strong>
+            {{ dataStore.legendField }}
+          </n-text>
+          <n-text v-if="dataStore.legendSelected.length > 0" depth="3" style="font-size:12px; cursor:pointer;" @click="clearSelections">
+            Clear
+          </n-text>
+        </div>
         
         <div class="category-list">
           <div 
-            v-for="(categoryInfo, index) in visibleCategories" 
-            :key="categoryInfo.name"
+            v-for="(name, idx) in allCategories" 
+            :key="name"
             class="category-item"
+            :class="{ selected: isSelected(name) }"
+            @click="toggle(name)"
           >
             <div 
               class="category-color"
-              :style="{ backgroundColor: getCategoryColor(categoryInfo.originalIndex) }"
+              :style="{ backgroundColor: getCategoryColor(getOriginalIndex(name)) }"
             />
             <n-text style="font-size: 12px;">
-              {{ categoryInfo.name }}
+              {{ name }}<span v-if="hasTotals">: {{ formatTotal(categoryTotals[name]) }}</span>
             </n-text>
           </div>
         </div>
@@ -62,52 +69,52 @@ const dataStore = useDataStore()
 
 const colorScale = computed(() => dataStore.colorScale)
 
-// Filter categories to only show those visible on the map
-const visibleCategories = computed(() => {
-  if (!dataStore.legendField || !dataStore.legendCategories.length) {
-    return []
-  }
-  
-  // Determine which locations are currently visible on the map
-  let visibleLocationNames = []
-  
-  if (dataStore.geoData && dataStore.geoData.features) {
-    // Extract location names from currently loaded GeoJSON features
-    visibleLocationNames = dataStore.geoData.features.map(feature => {
-      const props = feature.properties || {}
-      const rawName = props.NAME_2 || props.NAME_1 || props.NAME_0 || props.COUNTRY ||
-        props.shapeName || props.shapeGroup || props.shapeID || 
-        props.name || props.region || props.province || props.city || ''
-      return normalizeGADMName(rawName)
-    }).filter(Boolean)
-    
-    // Note: selectedSubdivisions now store PSGC codes; geoData is already filtered
-    // to include parent + selected subdivisions, so no additional filtering by names here.
-  }
-  
-  // If no GeoJSON loaded or no visible locations, show all categories
-  if (visibleLocationNames.length === 0) {
-    return dataStore.legendCategories.map((name, originalIndex) => ({ name, originalIndex }))
-  }
-  
-  // Find which categories have data for the visible locations
-  const visibleCategoriesSet = new Set()
-  
-  visibleLocationNames.forEach(locationName => {
-    const row = dataStore.findRowByLocation(locationName)
-    if (row && row[dataStore.legendField]) {
-      visibleCategoriesSet.add(row[dataStore.legendField])
-    }
-  })
-  
-  // Return categories that are actually visible, preserving original indices for consistent colors
-  return dataStore.legendCategories
-    .map((name, originalIndex) => ({ name, originalIndex }))
-    .filter(categoryInfo => visibleCategoriesSet.has(categoryInfo.name))
+// Always show all categories (interactive legend)
+const allCategories = computed(() => {
+  return dataStore.legendCategories || []
 })
 
+const getOriginalIndex = (name) => {
+  return (dataStore.legendCategories || []).findIndex(n => n === name)
+}
+
+const isSelected = (name) => {
+  return (dataStore.legendSelected || []).map(String).includes(String(name))
+}
+
+const toggle = (name) => {
+  dataStore.toggleLegendSelection(name)
+}
+
+const clearSelections = () => {
+  dataStore.clearLegendSelections()
+}
+
+// Per-category totals for the selected metric
+const hasTotals = computed(() => !!dataStore.selectedMetric && !!dataStore.legendField)
+const categoryTotals = computed(() => {
+  const totals = {}
+  if (!dataStore.selectedMetric || !dataStore.legendField) return totals
+  for (const name of dataStore.legendCategories) totals[name] = 0
+  // Use the full dataset so totals remain stable even when selections are applied
+  for (const row of dataStore.dataset || []) {
+    const cat = row[dataStore.legendField]
+    const val = parseFloat(row[dataStore.selectedMetric])
+    if (cat != null && !isNaN(val)) {
+      if (!(cat in totals)) totals[cat] = 0
+      totals[cat] += val
+    }
+  }
+  return totals
+})
+
+const formatTotal = (num) => {
+  if (num == null || isNaN(num)) return '0'
+  return Number(num).toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+
 const showLegend = computed(() => {
-  return (dataStore.legendField && visibleCategories.value.length > 0) || dataStore.selectedMetric
+  return (dataStore.legendField && allCategories.value.length > 0) || dataStore.selectedMetric
 })
 
 // Generate distinct colors for categories
@@ -163,6 +170,14 @@ const getCategoryColor = (index) => {
   display: flex;
   align-items: center;
   gap: 8px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.category-item.selected {
+  background: #f0f2ff;
+  outline: 1px solid #c7d2fe;
 }
 
 .category-color {

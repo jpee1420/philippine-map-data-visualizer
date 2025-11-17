@@ -213,13 +213,19 @@ function renderGeoJSON(geoData) {
       // If legend field is set, color by category
       if (dataStore.legendField && dataStore.legendCategories.length > 0) {
         let row = dataStore.findRowByLocation(locationName)
-        // Fallback to region row for subdivisions in region view
         if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
           row = dataStore.findRowByLocation(dataStore.mapFocus)
         }
+        const selectionActive = Array.isArray(dataStore.legendSelected) && dataStore.legendSelected.length > 0
+        const selSet = selectionActive ? new Set(dataStore.legendSelected.map(String)) : null
         const categoryValue = row ? row[dataStore.legendField] : null
-        const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
-        fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
+        const inSelection = !selectionActive || (categoryValue != null && selSet.has(String(categoryValue)))
+        if (!inSelection) {
+          fillColor = '#cccccc'
+        } else {
+          const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
+          fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
+        }
       } else {
         // Otherwise, color by metric value
         let value = dataStore.getValueForLocation(locationName)
@@ -379,8 +385,23 @@ function renderCalloutLabels() {
   
   // Get top locations to display
   const locationData = []
+  // For region view with selected subdivisions, restrict callouts to those subdivisions
+  const hasRegionSubdivisions = dataStore.mapLevel === 'regions' &&
+    Array.isArray(dataStore.selectedSubdivisions) &&
+    dataStore.selectedSubdivisions.length > 0
+
+  const selectedSubdivisionSet = hasRegionSubdivisions
+    ? new Set(dataStore.selectedSubdivisions.map(name => normalizeGADMName(name)))
+    : null
+
   dataStore.geoData.features.forEach(feature => {
     const locationName = getLocationName(feature)
+
+    // In regions view with checked provinces/cities, skip the parent region feature
+    if (hasRegionSubdivisions && !selectedSubdivisionSet.has(locationName)) {
+      return
+    }
+
     const value = dataStore.getValueForLocation(locationName)
     if (value !== null) {
       // Calculate center from feature's geometry bounds
@@ -694,9 +715,16 @@ function updateLayerColors() {
           if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
             row = dataStore.findRowByLocation(dataStore.mapFocus)
           }
+          const selectionActive = Array.isArray(dataStore.legendSelected) && dataStore.legendSelected.length > 0
+          const selSet = selectionActive ? new Set(dataStore.legendSelected.map(String)) : null
           const categoryValue = row ? row[dataStore.legendField] : null
-          const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
-          fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
+          const inSelection = !selectionActive || (categoryValue != null && selSet.has(String(categoryValue)))
+          if (!inSelection) {
+            fillColor = '#cccccc'
+          } else {
+            const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
+            fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
+          }
         } else {
           // Otherwise, color by metric value
           let value = dataStore.getValueForLocation(locationName)

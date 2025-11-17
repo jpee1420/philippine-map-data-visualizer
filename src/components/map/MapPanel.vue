@@ -1,7 +1,5 @@
 <template>
   <div class="map-panel">    
-    <!-- Filter Bar -->
-    <FilterBar />
     <div class="map-container">
       <MapView ref="mapViewRef" />
       <Legend />
@@ -13,7 +11,6 @@
 import { ref } from 'vue'
 import MapView from '@/components/map/MapView.vue'
 import Legend from '@/components/map/Legend.vue'
-import FilterBar from '@/components/common/FilterBar.vue'
 
 const mapViewRef = ref(null)
 
