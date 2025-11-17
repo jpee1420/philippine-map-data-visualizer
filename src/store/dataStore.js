@@ -116,6 +116,35 @@ function normalizeDatasetColumns(data) {
   })
 }
 
+// Helper name normalization and variant expansion for robust matching
+function _norm(str) {
+  return String(str || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+function _stripParen(str) {
+  return _norm(str).replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function _extractParen(str) {
+  const m = String(str || '').match(/\(([^)]+)\)/)
+  return m ? _norm(m[1]) : ''
+}
+
+function _expandVariants(name) {
+  const variants = new Set()
+  const base = _norm(name)
+  if (!base) return variants
+  variants.add(base)
+  const noParen = _stripParen(base)
+  if (noParen && noParen !== base) variants.add(noParen)
+  const inner = _extractParen(base)
+  if (inner) variants.add(inner)
+  return variants
+}
+
 export const useDataStore = defineStore('dataStore', {
   state: () => ({
     dataset: [],
@@ -241,62 +270,52 @@ export const useDataStore = defineStore('dataStore', {
     
     // Helper to find data row by location name with alias matching
     findRowByLocation(location) {
-      // Try exact match first
-      let row = this.filteredData.find(r => 
-        r.region === location || 
-        r.province === location || 
-        r.city === location
-      )
-      
-      // If no exact match, try case-insensitive and alias matching
-      if (!row) {
-        const locationLower = location.toLowerCase().trim()
-        row = this.filteredData.find(r => {
-          const regionLower = r.region?.toLowerCase().trim()
-          const provinceLower = r.province?.toLowerCase().trim()
-          const cityLower = r.city?.toLowerCase().trim()
-          
-          // Check if any field matches case-insensitively
-          if (regionLower === locationLower ||
-              provinceLower === locationLower ||
-              cityLower === locationLower) {
-            return true
+      const locVariants = _expandVariants(location)
+      // Exact/variant match across region/province/city
+      for (const r of this.filteredData) {
+        const regionVars = _expandVariants(r.region)
+        const provinceVars = _expandVariants(r.province)
+        const cityVars = _expandVariants(r.city)
+        for (const v of locVariants) {
+          if (regionVars.has(v) || provinceVars.has(v) || cityVars.has(v)) {
+            return r
           }
-          
-          // Check if location (from GeoJSON) matches any alias of data fields
-          for (const [canonical, aliases] of Object.entries(REGION_ALIASES)) {
-            const aliasesLower = aliases.map(a => a.toLowerCase().trim())
-            
-            // If the GeoJSON location matches any alias
-            if (aliasesLower.includes(locationLower)) {
-              // Check if the data row has any matching alias
-              if (aliasesLower.includes(regionLower) ||
-                  aliasesLower.includes(provinceLower) ||
-                  aliasesLower.includes(cityLower)) {
-                return true
-              }
-            }
-            
-            // If the data row matches any alias, check if location is also in that alias group
-            if (aliasesLower.includes(regionLower) ||
-                aliasesLower.includes(provinceLower) ||
-                aliasesLower.includes(cityLower)) {
-              if (aliasesLower.includes(locationLower)) {
-                return true
-              }
-            }
-          }
-          return false
-        })
+        }
       }
-      
-      return row
+
+      // Alias-group matching including canonical name
+      for (const r of this.filteredData) {
+        const regionVars = _expandVariants(r.region)
+        const provinceVars = _expandVariants(r.province)
+        const cityVars = _expandVariants(r.city)
+        for (const [canonical, aliases] of Object.entries(REGION_ALIASES)) {
+          const aliasSet = new Set(aliases.map(a => _norm(a)))
+          aliasSet.add(_norm(canonical))
+          let locationInGroup = false
+          for (const v of locVariants) {
+            if (aliasSet.has(v)) { locationInGroup = true; break }
+          }
+          if (!locationInGroup) continue
+          // Check if any field variant is also in the same group
+          if ([...regionVars, ...provinceVars, ...cityVars].some(v => aliasSet.has(_norm(v)))) {
+            return r
+          }
+        }
+      }
+
+      return null
     },
     
     getValueForLocation(location) {
       if (!this.selectedMetric) return null
       const row = this.findRowByLocation(location)
-      return row ? parseFloat(row[this.selectedMetric]) : null
+      if (row) return parseFloat(row[this.selectedMetric])
+      // Region-level fallback: aggregate metric across rows belonging to the region
+      if (this.mapLevel === 'regions') {
+        const val = this._aggregateRegionMetric(location)
+        return val !== null && !isNaN(val) ? val : null
+      }
+      return null
     },
     
     getColorForValue(value) {
@@ -307,6 +326,23 @@ export const useDataStore = defineStore('dataStore', {
       const index = Math.floor(normalized * (colors.length - 1))
       
       return colors[Math.max(0, Math.min(colors.length - 1, index))]
+    },
+    
+    // Sum all metric values for rows whose region matches the given region name (variant-aware)
+    _aggregateRegionMetric(regionName) {
+      if (!this.selectedMetric) return null
+      const targets = _expandVariants(regionName)
+      let sum = 0
+      let matched = false
+      for (const r of this.filteredData) {
+        const rVars = _expandVariants(r.region)
+        let inRegion = false
+        for (const v of targets) { if (rVars.has(v)) { inRegion = true; break } }
+        if (!inRegion) continue
+        const val = parseFloat(r[this.selectedMetric])
+        if (!isNaN(val)) { sum += val; matched = true }
+      }
+      return matched ? sum : null
     },
     
     setMapLevel(level) {

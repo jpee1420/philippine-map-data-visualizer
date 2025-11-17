@@ -212,13 +212,21 @@ function renderGeoJSON(geoData) {
       
       // If legend field is set, color by category
       if (dataStore.legendField && dataStore.legendCategories.length > 0) {
-        const row = dataStore.findRowByLocation(locationName)
+        let row = dataStore.findRowByLocation(locationName)
+        // Fallback to region row for subdivisions in region view
+        if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+          row = dataStore.findRowByLocation(dataStore.mapFocus)
+        }
         const categoryValue = row ? row[dataStore.legendField] : null
         const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
         fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
       } else {
         // Otherwise, color by metric value
-        const value = dataStore.getValueForLocation(locationName)
+        let value = dataStore.getValueForLocation(locationName)
+        // If no value for subdivision while in region view, use region value
+        if ((value === null || isNaN(value)) && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+          value = dataStore.getValueForLocation(dataStore.mapFocus)
+        }
         fillColor = dataStore.getColorForValue(value)
       }
       
@@ -243,7 +251,10 @@ function renderGeoJSON(geoData) {
       
       if (dataStore.selectedMetrics && dataStore.selectedMetrics.length > 0) {
         // Show all selected metrics using alias-aware matching
-        const row = dataStore.findRowByLocation(locationName)
+        let row = dataStore.findRowByLocation(locationName)
+        if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+          row = dataStore.findRowByLocation(dataStore.mapFocus)
+        }
         
         if (row) {
           const metricLines = dataStore.selectedMetrics.map(metric => {
@@ -259,7 +270,20 @@ function renderGeoJSON(geoData) {
           tooltipContent += 'No data available'
         }
       } else {
-        tooltipContent += 'No data available'
+        // Fallback: show the single selected metric if available
+        if (dataStore.selectedMetric) {
+          let row = dataStore.findRowByLocation(locationName)
+          if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+            row = dataStore.findRowByLocation(dataStore.mapFocus)
+          }
+          const value = row ? parseFloat(row[dataStore.selectedMetric]) : null
+          const formatted = value !== null && !isNaN(value)
+            ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : 'N/A'
+          tooltipContent += `${dataStore.selectedMetric}: ${formatted}`
+        } else {
+          tooltipContent += 'No data available'
+        }
       }
       
       layer.bindTooltip(tooltipContent, { 
@@ -422,7 +446,10 @@ function renderCalloutLabels() {
     const labelWidth = Math.max(120, Math.min(200, 160 * zoomScale))
     
     // Get row data for additional metrics
-    const row = dataStore.findRowByLocation(name)
+    let row = dataStore.findRowByLocation(name)
+    if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+      row = dataStore.findRowByLocation(dataStore.mapFocus)
+    }
     
     // Build metrics display
     let metricsHtml = ''
@@ -663,13 +690,19 @@ function updateLayerColors() {
         
         // If legend field is set, color by category
         if (dataStore.legendField && dataStore.legendCategories.length > 0) {
-          const row = dataStore.findRowByLocation(locationName)
+          let row = dataStore.findRowByLocation(locationName)
+          if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+            row = dataStore.findRowByLocation(dataStore.mapFocus)
+          }
           const categoryValue = row ? row[dataStore.legendField] : null
           const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
           fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
         } else {
           // Otherwise, color by metric value
-          const value = dataStore.getValueForLocation(locationName)
+          let value = dataStore.getValueForLocation(locationName)
+          if ((value === null || isNaN(value)) && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+            value = dataStore.getValueForLocation(dataStore.mapFocus)
+          }
           fillColor = dataStore.getColorForValue(value)
         }
         
