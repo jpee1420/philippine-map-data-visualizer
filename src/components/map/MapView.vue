@@ -118,13 +118,22 @@ async function loadGeoJSONData() {
         const selectedSet = new Set(
           dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
         )
+        const provincePath = `${basePath}${GADM_PATHS.provinces}`
+        debug('[MapView] Loading GADM level-1 for region province subdivisions')
+        const provinceData = await loadGeoJSON(provincePath)
+        const focusRegionName = normalizeGADMName(focusRegion)
+        const selectedProvinceFeatures = (provinceData.features || []).filter(feature => {
+          const props = feature.properties || {}
+          const regionName = normalizeGADMName(props.NAME_0)
+          const provName = normalizeGADMName(props.NAME_1)
+          return regionName === focusRegionName && selectedSet.has(provName)
+        })
+        const combinedFeatures = selectedProvinceFeatures.length > 0
+          ? [...regionFeatures, ...selectedProvinceFeatures]
+          : regionFeatures
         filteredGeoData = {
           ...geoData,
-          features: regionFeatures.filter(feature => {
-            const props = feature.properties || {}
-            const provName = normalizeGADMName(props.NAME_1)
-            return selectedSet.has(provName)
-          })
+          features: combinedFeatures
         }
       }
     } else {
