@@ -26,7 +26,7 @@
             />
             <n-text style="font-size: 12px;">
               {{ name }}<span v-if="hasTotals">: {{ formatTotal(categoryTotals[name]) }}</span>
-            </n-text>
+            </n-text>   
           </div>
         </div>
       </div>
@@ -63,7 +63,6 @@
 import { computed } from 'vue'
 import { NCard, NText } from 'naive-ui'
 import { useDataStore } from '@/store/dataStore'
-import { normalizeGADMName } from '@/utils/nameUtils'
 
 const dataStore = useDataStore()
 

@@ -91,8 +91,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { NCard, NSpace, NText, NRadioGroup, NRadio, NSelect, NAlert, NCheckbox } from 'naive-ui'
 import { useDataStore } from '@/store/dataStore'
-import { normalizeGADMName } from '@/utils/nameUtils'
-import { GADM_PATHS, NCR_REGION_NAME, NCR_PARENT_NAME } from '@/config/mapConfig'
+import { normalizeLocationName } from '@/utils/nameUtils'
+import { BOUNDARY_PATHS, NCR_REGION_NAME } from '@/config/mapConfig'
 
 const dataStore = useDataStore()
 
@@ -187,68 +187,93 @@ async function loadSubdivisions() {
 	if (selectedLevel.value === 'regions' && selectedRegion.value) {
 		const isNCR = selectedRegion.value.includes(NCR_REGION_NAME)
 		if (isNCR) {
+			// NCR: treat its cities/municipalities (ADM3) as subdivisions
 			try {
-				const resp = await fetch(`${basePath}${GADM_PATHS.cities}`)
-				const adm2 = await resp.json()
-				const ncrParentName = normalizeGADMName(NCR_PARENT_NAME)
-				const items = (adm2.features || [])
+				const resp = await fetch(`${basePath}${BOUNDARY_PATHS.cities}`)
+				const adm3 = await resp.json()
+				const regionName = normalizeLocationName(selectedRegion.value)
+				const items = (adm3.features || [])
 					.filter(f => {
 						const p = f.properties || {}
-						return normalizeGADMName(p.NAME_1) === ncrParentName
+						return normalizeLocationName(p.ADM1_EN) === regionName
 					})
 					.map(f => {
 						const p = f.properties || {}
-						const name = normalizeGADMName(p.NAME_2)
-						return { code: name, name }
+						const name = normalizeLocationName(p.ADM3_EN)
+						const code = String(p.ADM3_PCODE || name)
+						return { code, name }
 					})
 					.filter(it => it.name)
 				const unique = new Map(items.map(it => [it.code, it]))
 				subdivisions.value = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
 			} catch (e) {
-				console.warn('Failed to load GADM level-2 for NCR city/municipality subdivisions:', e)
+				console.warn('Failed to load ADM3 for NCR city/municipality subdivisions:', e)
 				subdivisions.value = []
 			}
 		} else {
+			// Non-NCR regions: subdivisions are provinces (ADM2)
 			try {
-				const resp = await fetch(`${basePath}${GADM_PATHS.provinces}`)
-				const adm1 = await resp.json()
-				const items = (adm1.features || [])
+				const resp = await fetch(`${basePath}${BOUNDARY_PATHS.provinces}`)
+				const adm2 = await resp.json()
+				const regionName = normalizeLocationName(selectedRegion.value)
+				const items = (adm2.features || [])
 					.filter(f => {
 						const p = f.properties || {}
-						return normalizeGADMName(p.NAME_0) === selectedRegion.value
+						return normalizeLocationName(p.ADM1_EN) === regionName
 					})
 					.map(f => {
 						const p = f.properties || {}
-						const name = normalizeGADMName(p.NAME_1)
-						return { code: name, name }
+						const name = normalizeLocationName(p.ADM2_EN)
+						const code = String(p.ADM2_PCODE || name)
+						return { code, name }
 					})
 					.filter(it => it.name)
 				const unique = new Map(items.map(it => [it.code, it]))
 				subdivisions.value = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
 			} catch (e) {
-				console.warn('Failed to load GADM level-1 for region subdivisions:', e)
+				console.warn('Failed to load ADM2 for region subdivisions:', e)
 				subdivisions.value = []
 			}
 		}
 	} else if (selectedLevel.value === 'provinces' && selectedProvince.value) {
 		try {
-			const resp = await fetch(`${basePath}${GADM_PATHS.cities}`)
-			const adm2 = await resp.json()
-			const items = (adm2.features || [])
+			// Determine the ADM2_PCODE for the selected province name
+			const provResp = await fetch(`${basePath}${BOUNDARY_PATHS.provinces}`)
+			const adm2Provinces = await provResp.json()
+			const provinceName = normalizeLocationName(selectedProvince.value)
+			let provinceCode = null
+			;(adm2Provinces.features || []).some(f => {
+				const p = f.properties || {}
+				if (normalizeLocationName(p.ADM2_EN) === provinceName) {
+					provinceCode = String(p.ADM2_PCODE || '')
+					return true
+				}
+				return false
+			})
+			if (!provinceCode) {
+				console.warn('Could not resolve ADM2_PCODE for province', selectedProvince.value)
+				subdivisions.value = []
+				return
+			}
+			// Load ADM3 and filter by ADM2_PCODE
+			const resp = await fetch(`${basePath}${BOUNDARY_PATHS.cities}`)
+			const adm3 = await resp.json()
+			const items = (adm3.features || [])
 				.filter(f => {
 					const p = f.properties || {}
-					return normalizeGADMName(p.NAME_1) === selectedProvince.value
+					return String(p.ADM2_PCODE || '') === provinceCode
 				})
 				.map(f => {
 					const p = f.properties || {}
-					const name = normalizeGADMName(p.NAME_2)
-					return { code: name, name }
+					const name = normalizeLocationName(p.ADM3_EN)
+					const code = String(p.ADM3_PCODE || name)
+					return { code, name }
 				})
 				.filter(it => it.name)
 			const unique = new Map(items.map(it => [it.code, it]))
 			subdivisions.value = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
 		} catch (e) {
-			console.warn('Failed to load GADM level-2 for province subdivisions:', e)
+			console.warn('Failed to load ADM3 for province subdivisions:', e)
 			subdivisions.value = []
 		}
 	} else {
@@ -259,19 +284,19 @@ async function loadSubdivisions() {
 async function loadRegionProvinceLists() {
 	const basePath = import.meta.env.BASE_URL || '/'
 	try {
-		const resp = await fetch(`${basePath}${GADM_PATHS.provinces}`)
-		const adm1 = await resp.json()
+		const resp = await fetch(`${basePath}${BOUNDARY_PATHS.provinces}`)
+		const adm2 = await resp.json()
 		const regions = new Set()
 		const provinces = new Set()
-		;(adm1.features || []).forEach(f => {
+		;(adm2.features || []).forEach(f => {
 			const p = f.properties || {}
-			if (p.NAME_0) regions.add(normalizeGADMName(p.NAME_0))
-			if (p.NAME_1) provinces.add(normalizeGADMName(p.NAME_1))
+			if (p.ADM1_EN) regions.add(normalizeLocationName(p.ADM1_EN))
+			if (p.ADM2_EN) provinces.add(normalizeLocationName(p.ADM2_EN))
 		})
 		availableRegions.value = Array.from(regions).sort()
 		availableProvinces.value = Array.from(provinces).sort()
 	} catch (e) {
-		console.warn('Failed to load GADM level-1 for selector lists:', e)
+		console.warn('Failed to load ADM2 for selector lists:', e)
 		availableRegions.value = []
 		availableProvinces.value = []
 	}

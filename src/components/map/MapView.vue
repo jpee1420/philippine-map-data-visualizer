@@ -12,10 +12,11 @@
 import { ref, onMounted, watch } from 'vue'
 import { NSpin } from 'naive-ui'
 import L from 'leaflet'
+import union from '@turf/union'
 import { useDataStore } from '@/store/dataStore'
 import { loadGeoJSON } from '@/utils/geoUtils'
-import { normalizeGADMName } from '@/utils/nameUtils'
-import { GADM_PATHS, NCR_REGION_NAME, NCR_PARENT_NAME } from '@/config/mapConfig'
+import { normalizeLocationName } from '@/utils/nameUtils'
+import { BOUNDARY_PATHS, NCR_REGION_NAME } from '@/config/mapConfig'
 import { debug } from '@/utils/logger'
 
 const dataStore = useDataStore()
@@ -66,18 +67,18 @@ onMounted(async () => {
 // Load GeoJSON data based on map level
 async function loadGeoJSONData() {
   const basePath = import.meta.env.BASE_URL || '/'
-  let geoJsonPath = `${basePath}${GADM_PATHS.country}` // Default to country
+  let geoJsonPath = `${basePath}${BOUNDARY_PATHS.country}` // Default to country
   
   // Determine which GeoJSON to load based on map level
   switch (dataStore.mapLevel) {
     case 'country':
-      geoJsonPath = `${basePath}${GADM_PATHS.country}`
+      geoJsonPath = `${basePath}${BOUNDARY_PATHS.country}`
       break
     case 'regions':
-      geoJsonPath = `${basePath}${GADM_PATHS.regions}`
+      geoJsonPath = `${basePath}${BOUNDARY_PATHS.regions}`
       break
     case 'provinces':
-      geoJsonPath = `${basePath}${GADM_PATHS.provinces}`
+      geoJsonPath = `${basePath}${BOUNDARY_PATHS.provinces}`
       break
   }
   
@@ -89,95 +90,221 @@ async function loadGeoJSONData() {
   
   if (dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
     const focusRegion = dataStore.mapFocus
-    const regionFeatures = (geoData.features || []).filter(feature => {
-      const props = feature.properties || {}
-      return normalizeGADMName(props.NAME_0) === focusRegion
-    })
+    const focusRegionName = normalizeLocationName(focusRegion)
+    
     const isNCR = focusRegion.includes(NCR_REGION_NAME)
-    if (dataStore.selectedSubdivisions && dataStore.selectedSubdivisions.length > 0) {
-      if (isNCR) {
-        // NCR has no provinces; treat its 16 cities + 1 municipality as subdivisions
-        const subdivisionPath = `${basePath}${GADM_PATHS.cities}`
-        debug('[MapView] Loading GADM level-2 for NCR city/municipality subdivisions')
-        const subdivisionData = await loadGeoJSON(subdivisionPath)
+
+    if (isNCR) {
+      // NCR: derive region outline and subdivisions from ADM3 (cities/municipalities)
+      const subdivisionPath = `${basePath}${BOUNDARY_PATHS.cities}`
+      
+      debug('[MapView] Loading ADM3 for NCR region outline and subdivisions')
+      const subdivisionData = await loadGeoJSON(subdivisionPath)
+
+      const allRegionCities = (subdivisionData.features || []).filter(feature => {
+        const props = feature.properties || {}
+        const regionName = normalizeLocationName(props.ADM1_EN || '')
+        return regionName === focusRegionName
+      })
+
+      const regionFeature = buildRegionOutlineFeature(allRegionCities, focusRegion)
+
+      let features = []
+      if (regionFeature) {
+        features.push(regionFeature)
+      }
+
+      if (dataStore.selectedSubdivisions && dataStore.selectedSubdivisions.length > 0) {
         const selectedSet = new Set(
-          dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
+          dataStore.selectedSubdivisions.map(code => String(code))
         )
-        const ncrParentName = normalizeGADMName(NCR_PARENT_NAME)
-        const selectedSubFeatures = (subdivisionData.features || []).filter(feature => {
+        const selectedSubFeatures = allRegionCities.filter(feature => {
           const props = feature.properties || {}
-          const parentName = normalizeGADMName(props.NAME_1)
-          const cityName = normalizeGADMName(props.NAME_2)
-          return parentName === ncrParentName && selectedSet.has(cityName)
+          const code = String(props.ADM3_PCODE || '')
+          return code && selectedSet.has(code)
         })
-        filteredGeoData = {
-          ...geoData,
-          features: [...regionFeatures, ...selectedSubFeatures]
-        }
-      } else {
-        const selectedSet = new Set(
-          dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
-        )
-        const provincePath = `${basePath}${GADM_PATHS.provinces}`
-        debug('[MapView] Loading GADM level-1 for region province subdivisions')
-        const provinceData = await loadGeoJSON(provincePath)
-        const focusRegionName = normalizeGADMName(focusRegion)
-        const selectedProvinceFeatures = (provinceData.features || []).filter(feature => {
-          const props = feature.properties || {}
-          const regionName = normalizeGADMName(props.NAME_0)
-          const provName = normalizeGADMName(props.NAME_1)
-          return regionName === focusRegionName && selectedSet.has(provName)
-        })
-        const combinedFeatures = selectedProvinceFeatures.length > 0
-          ? [...regionFeatures, ...selectedProvinceFeatures]
-          : regionFeatures
-        filteredGeoData = {
-          ...geoData,
-          features: combinedFeatures
-        }
+        features = regionFeature ? [regionFeature, ...selectedSubFeatures] : selectedSubFeatures
+      }
+
+      filteredGeoData = {
+        ...subdivisionData,
+        features
       }
     } else {
+      // Non-NCR regions: derive region outline and province subdivisions from ADM2
+      const provincePath = `${basePath}${BOUNDARY_PATHS.provinces}`
+      
+      debug('[MapView] Loading ADM2 for region outline and province subdivisions')
+      const provinceData = await loadGeoJSON(provincePath)
+
+      const allRegionProvinces = (provinceData.features || []).filter(feature => {
+        const props = feature.properties || {}
+        const regionName = normalizeLocationName(props.ADM1_EN || props.NAME_0)
+        return regionName === focusRegionName
+      })
+
+      const regionFeature = buildRegionOutlineFeature(allRegionProvinces, focusRegion)
+
+      let features = []
+      if (regionFeature) {
+        features.push(regionFeature)
+      }
+
+      if (dataStore.selectedSubdivisions && dataStore.selectedSubdivisions.length > 0) {
+        const selectedSet = new Set(
+          dataStore.selectedSubdivisions.map(code => String(code))
+        )
+        const selectedProvinceFeatures = allRegionProvinces.filter(feature => {
+          const props = feature.properties || {}
+          const code = String(props.ADM2_PCODE || '')
+          return code && selectedSet.has(code)
+        })
+        features = regionFeature ? [regionFeature, ...selectedProvinceFeatures] : selectedProvinceFeatures
+      }
+
       filteredGeoData = {
-        ...geoData,
-        features: regionFeatures
+        ...provinceData,
+        features
       }
     }
+
     debug('[MapView] Filtered region features:', filteredGeoData.features.length)
   } else if (dataStore.mapLevel === 'provinces' && dataStore.mapFocus) {
     const focusProvince = dataStore.mapFocus
-    const parentFeatures = (geoData.features || []).filter(feature => {
+    const focusProvinceName = normalizeLocationName(focusProvince)
+
+    // Provinces view: derive province outline and subdivisions from ADM3 (cities/municipalities)
+    const subdivisionPath = `${basePath}${BOUNDARY_PATHS.cities}`
+    
+    debug('[MapView] Loading ADM3 for province outline and subdivisions')
+    const subdivisionData = await loadGeoJSON(subdivisionPath)
+
+    const allProvinceCities = (subdivisionData.features || []).filter(feature => {
       const props = feature.properties || {}
-      return normalizeGADMName(props.NAME_1) === focusProvince
+      const provName = normalizeLocationName(props.ADM2_EN || props.NAME_1)
+      return provName === focusProvinceName
     })
+
+    const provinceFeature = buildProvinceOutlineFeature(allProvinceCities, focusProvince)
+
+    let features = []
+    if (provinceFeature) {
+      features.push(provinceFeature)
+    }
+
     if (dataStore.selectedSubdivisions && dataStore.selectedSubdivisions.length > 0) {
-      const subdivisionPath = `${basePath}${GADM_PATHS.cities}`
-      debug('[MapView] Loading GADM level-2 for province subdivisions')
-      const subdivisionData = await loadGeoJSON(subdivisionPath)
       const selectedSet = new Set(
-        dataStore.selectedSubdivisions.map(name => normalizeGADMName(name))
+        dataStore.selectedSubdivisions.map(code => String(code))
       )
-      const selectedSubFeatures = (subdivisionData.features || []).filter(feature => {
+      const selectedSubFeatures = allProvinceCities.filter(feature => {
         const props = feature.properties || {}
-        const provName = normalizeGADMName(props.NAME_1)
-        const cityName = normalizeGADMName(props.NAME_2)
-        return provName === focusProvince && selectedSet.has(cityName)
+        const code = String(props.ADM3_PCODE || '')
+        return code && selectedSet.has(code)
       })
-      filteredGeoData = {
-        ...geoData,
-        features: [...parentFeatures, ...selectedSubFeatures]
-      }
-      debug('[MapView] Parent + subdivision features:', filteredGeoData.features.length)
+      features = provinceFeature ? [provinceFeature, ...selectedSubFeatures] : selectedSubFeatures
+      debug('[MapView] Province outline + subdivision features:', features.length)
     } else {
-      filteredGeoData = {
-        ...geoData,
-        features: parentFeatures
-      }
-      debug('[MapView] Province focus features:', filteredGeoData.features.length)
+      debug('[MapView] Province outline only (no subdivisions selected)')
+    }
+
+    filteredGeoData = {
+      ...subdivisionData,
+      features
     }
   }
   
   dataStore.setGeoData(filteredGeoData)
   renderGeoJSON(filteredGeoData)
+}
+
+// Build a single region outline feature by unioning province/city features
+function buildRegionOutlineFeature(features, regionName) {
+  if (!features || features.length === 0) return null
+
+  let merged = null
+
+  for (const f of features) {
+    if (!f || !f.geometry) continue
+    const base = {
+      type: 'Feature',
+      properties: {},
+      geometry: f.geometry
+    }
+    if (!merged) {
+      merged = base
+    } else {
+      try {
+        const u = union(merged, base)
+        if (u && u.geometry) {
+          merged = u
+        }
+      } catch (e) {
+        console.warn('Union failed for region', regionName, e)
+      }
+    }
+  }
+
+  if (!merged || !merged.geometry) return null
+
+  const firstProps = (features[0] && features[0].properties) || {}
+  const regionProps = {
+    ADM0_EN: firstProps.ADM0_EN || 'Philippines',
+    ADM0_PCODE: firstProps.ADM0_PCODE || 'PH',
+    ADM1_EN: regionName,
+    ADM1_PCODE: firstProps.ADM1_PCODE || firstProps.ADM1_PCODE
+  }
+
+  return {
+    type: 'Feature',
+    properties: regionProps,
+    geometry: merged.geometry
+  }
+}
+
+// Build a single province outline feature by unioning city/municipality features
+function buildProvinceOutlineFeature(features, provinceName) {
+  if (!features || features.length === 0) return null
+
+  let merged = null
+
+  for (const f of features) {
+    if (!f || !f.geometry) continue
+    const base = {
+      type: 'Feature',
+      properties: {},
+      geometry: f.geometry
+    }
+    if (!merged) {
+      merged = base
+    } else {
+      try {
+        const u = union(merged, base)
+        if (u && u.geometry) {
+          merged = u
+        }
+      } catch (e) {
+        console.warn('Union failed for province', provinceName, e)
+      }
+    }
+  }
+
+  if (!merged || !merged.geometry) return null
+
+  const firstProps = (features[0] && features[0].properties) || {}
+  const provProps = {
+    ADM0_EN: firstProps.ADM0_EN || 'Philippines',
+    ADM0_PCODE: firstProps.ADM0_PCODE || 'PH',
+    ADM1_EN: firstProps.ADM1_EN,
+    ADM1_PCODE: firstProps.ADM1_PCODE,
+    ADM2_EN: provinceName,
+    ADM2_PCODE: firstProps.ADM2_PCODE
+  }
+
+  return {
+    type: 'Feature',
+    properties: provProps,
+    geometry: merged.geometry
+  }
 }
 
 // Render GeoJSON with colors
@@ -391,17 +518,21 @@ function renderCalloutLabels() {
     dataStore.selectedSubdivisions.length > 0
 
   const selectedSubdivisionSet = hasRegionSubdivisions
-    ? new Set(dataStore.selectedSubdivisions.map(name => normalizeGADMName(name)))
+    ? new Set(dataStore.selectedSubdivisions.map(code => String(code)))
     : null
 
   dataStore.geoData.features.forEach(feature => {
-    const locationName = getLocationName(feature)
+    const props = feature.properties || {}
 
     // In regions view with checked provinces/cities, skip the parent region feature
-    if (hasRegionSubdivisions && !selectedSubdivisionSet.has(locationName)) {
-      return
+    if (hasRegionSubdivisions) {
+      const code = String(props.ADM2_PCODE || props.ADM3_PCODE || '')
+      if (!code || !selectedSubdivisionSet.has(code)) {
+        return
+      }
     }
 
+    const locationName = getLocationName(feature)
     const value = dataStore.getValueForLocation(locationName)
     if (value !== null) {
       // Calculate center from feature's geometry bounds
@@ -643,13 +774,28 @@ function setupCalloutInteractions(calloutId, marker, line, center) {
 }
 
 // Helper function to get location name from feature properties
+// Prefer ADM*_EN fields from phl_admbnda, fall back to older NAME_* and other props
 function getLocationName(feature) {
   const props = feature.properties || {}
-  if (props.NAME_2) return normalizeGADMName(props.NAME_2)
-  if (props.NAME_1) return normalizeGADMName(props.NAME_1)
-  if (props.NAME_0) return normalizeGADMName(props.NAME_0)
-  if (props.COUNTRY) return normalizeGADMName(props.COUNTRY)
-  return 'Unknown'
+  const rawName =
+    props.ADM3_EN ||
+    props.ADM2_EN ||
+    props.ADM1_EN ||
+    props.ADM0_EN ||
+    props.NAME_2 ||
+    props.NAME_1 ||
+    props.NAME_0 ||
+    props.COUNTRY ||
+    props.shapeName ||
+    props.shapeGroup ||
+    props.shapeID ||
+    props.name ||
+    props.region ||
+    props.province ||
+    props.city ||
+    ''
+
+  return normalizeLocationName(rawName) || 'Unknown'
 }
 
 // Helper function to calculate center of a single feature's geometry
