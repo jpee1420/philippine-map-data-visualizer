@@ -93,6 +93,7 @@ import { NCard, NSpace, NText, NRadioGroup, NRadio, NSelect, NAlert, NCheckbox }
 import { useDataStore } from '@/store/dataStore'
 import { normalizeLocationName } from '@/utils/nameUtils'
 import { BOUNDARY_PATHS, NCR_REGION_NAME } from '@/config/mapConfig'
+import { loadGeoJSON } from '@/utils/geoUtils'
 
 const dataStore = useDataStore()
 
@@ -154,13 +155,17 @@ function handleLevelChange(level) {
 function handleRegionSelect(region) {
   dataStore.setMapFocus(region)
   clearSubdivisions()
-  loadSubdivisions()
+  if (region) {
+    loadSubdivisions()
+  }
 }
 
 function handleProvinceSelect(province) {
   dataStore.setMapFocus(province)
   clearSubdivisions()
-  loadSubdivisions()
+  if (province) {
+    loadSubdivisions()
+  }
 }
 
 // City select removed
@@ -189,8 +194,7 @@ async function loadSubdivisions() {
 		if (isNCR) {
 			// NCR: treat its cities/municipalities (ADM3) as subdivisions
 			try {
-				const resp = await fetch(`${basePath}${BOUNDARY_PATHS.cities}`)
-				const adm3 = await resp.json()
+				const adm3 = await loadGeoJSON(`${basePath}${BOUNDARY_PATHS.cities}`)
 				const regionName = normalizeLocationName(selectedRegion.value)
 				const items = (adm3.features || [])
 					.filter(f => {
@@ -213,8 +217,7 @@ async function loadSubdivisions() {
 		} else {
 			// Non-NCR regions: subdivisions are provinces (ADM2)
 			try {
-				const resp = await fetch(`${basePath}${BOUNDARY_PATHS.provinces}`)
-				const adm2 = await resp.json()
+				const adm2 = await loadGeoJSON(`${basePath}${BOUNDARY_PATHS.provinces}`)
 				const regionName = normalizeLocationName(selectedRegion.value)
 				const items = (adm2.features || [])
 					.filter(f => {
@@ -238,8 +241,7 @@ async function loadSubdivisions() {
 	} else if (selectedLevel.value === 'provinces' && selectedProvince.value) {
 		try {
 			// Determine the ADM2_PCODE for the selected province name
-			const provResp = await fetch(`${basePath}${BOUNDARY_PATHS.provinces}`)
-			const adm2Provinces = await provResp.json()
+			const adm2Provinces = await loadGeoJSON(`${basePath}${BOUNDARY_PATHS.provinces}`)
 			const provinceName = normalizeLocationName(selectedProvince.value)
 			let provinceCode = null
 			;(adm2Provinces.features || []).some(f => {
@@ -256,8 +258,7 @@ async function loadSubdivisions() {
 				return
 			}
 			// Load ADM3 and filter by ADM2_PCODE
-			const resp = await fetch(`${basePath}${BOUNDARY_PATHS.cities}`)
-			const adm3 = await resp.json()
+			const adm3 = await loadGeoJSON(`${basePath}${BOUNDARY_PATHS.cities}`)
 			const items = (adm3.features || [])
 				.filter(f => {
 					const p = f.properties || {}
@@ -284,8 +285,7 @@ async function loadSubdivisions() {
 async function loadRegionProvinceLists() {
 	const basePath = import.meta.env.BASE_URL || '/'
 	try {
-		const resp = await fetch(`${basePath}${BOUNDARY_PATHS.provinces}`)
-		const adm2 = await resp.json()
+		const adm2 = await loadGeoJSON(`${basePath}${BOUNDARY_PATHS.provinces}`)
 		const regions = new Set()
 		const provinces = new Set()
 		;(adm2.features || []).forEach(f => {
