@@ -149,12 +149,15 @@ export const useDataStore = defineStore('dataStore', {
   state: () => ({
     dataset: [],
     filteredData: [],
+    locationRowIndex: {},
     geoData: null,
     selectedMetric: null,
     selectedMetrics: [], // Array of selected metrics for multi-metric display
     legendField: null, // Categorical field for legend (e.g., gender, nationality)
     legendCategories: [], // Unique categories from legend field
     legendSelected: [], // Selected legend category values for filtering
+    filterDimensions: [],
+    filterSelections: {},
     availableMetrics: [],
     mapLevel: 'country', // 'country', 'regions', or 'provinces'
     mapFocus: null, // Specific location to focus on (e.g., "Ilocos Region")
@@ -225,15 +228,36 @@ export const useDataStore = defineStore('dataStore', {
       this.updateColorScale()
     },
     
-    // Legend-based filtering
+    // Legend-based and dimension-based filtering
     applyLegendFilter() {
+      let rows = this.dataset.slice()
+
+      if (Array.isArray(this.filterDimensions) && this.filterDimensions.length > 0) {
+        const dims = this.filterDimensions
+        const selections = this.filterSelections || {}
+        rows = rows.filter(row => {
+          for (const field of dims) {
+            const selected = Array.isArray(selections[field]) ? selections[field] : []
+            if (selected.length === 0) continue
+            const val = row[field]
+            const strVal = String(val)
+            let matched = false
+            for (const s of selected) {
+              if (String(s) === strVal) { matched = true; break }
+            }
+            if (!matched) return false
+          }
+          return true
+        })
+      }
+
       if (this.legendField && Array.isArray(this.legendSelected) && this.legendSelected.length > 0) {
         const selectedSet = new Set(this.legendSelected.map(v => String(v)))
-        this.filteredData = this.dataset.filter(row => selectedSet.has(String(row[this.legendField])))
-      } else {
-        // No legend filter -> use full dataset
-        this.filteredData = this.dataset.slice()
+        rows = rows.filter(row => selectedSet.has(String(row[this.legendField])))
       }
+
+      this.filteredData = rows
+      this._rebuildLocationIndex()
       this.updateColorScale()
     },
     
@@ -254,6 +278,68 @@ export const useDataStore = defineStore('dataStore', {
       this.legendSelected = []
       this.applyLegendFilter()
     },
+
+    setFilterDimensions(fields) {
+      const nextFields = Array.isArray(fields) ? fields : []
+      const nextSelections = {}
+      const current = this.filterSelections || {}
+      for (const f of nextFields) {
+        const existing = Array.isArray(current[f]) ? current[f] : []
+        nextSelections[f] = existing.slice()
+      }
+      this.filterDimensions = nextFields
+      this.filterSelections = nextSelections
+      this.applyLegendFilter()
+    },
+
+    toggleFilterSelection(field, value) {
+      const key = String(field)
+      const val = String(value)
+      const current = this.filterSelections || {}
+      const existing = Array.isArray(current[key]) ? current[key].map(v => String(v)) : []
+      const set = new Set(existing)
+      if (set.has(val)) set.delete(val); else set.add(val)
+      this.filterSelections = {
+        ...current,
+        [key]: Array.from(set)
+      }
+      this.applyLegendFilter()
+    },
+
+    clearFilterSelections(field) {
+      if (!field) return
+      const key = String(field)
+      const current = this.filterSelections || {}
+      if (!current[key] || (Array.isArray(current[key]) && current[key].length === 0)) {
+        return
+      }
+      this.filterSelections = {
+        ...current,
+        [key]: []
+      }
+      this.applyLegendFilter()
+    },
+    
+    _rebuildLocationIndex() {
+      const index = {}
+      const rows = this.filteredData || []
+      for (const r of rows) {
+        const regionVars = _expandVariants(r.region)
+        const provinceVars = _expandVariants(r.province)
+        const cityVars = _expandVariants(r.city)
+
+        for (const v of regionVars) {
+          if (!index[v]) index[v] = r
+        }
+        for (const v of provinceVars) {
+          if (!index[v]) index[v] = r
+        }
+        for (const v of cityVars) {
+          if (!index[v]) index[v] = r
+        }
+      }
+      this.locationRowIndex = index
+    },
     
     updateColorScale() {
       const stats = this.metricStats
@@ -263,35 +349,31 @@ export const useDataStore = defineStore('dataStore', {
     
     // Helper to find data row by location name with alias matching
     findRowByLocation(location) {
+      if (!location) return null
       const locVariants = _expandVariants(location)
-      // Exact/variant match across region/province/city
-      for (const r of this.filteredData) {
-        const regionVars = _expandVariants(r.region)
-        const provinceVars = _expandVariants(r.province)
-        const cityVars = _expandVariants(r.city)
-        for (const v of locVariants) {
-          if (regionVars.has(v) || provinceVars.has(v) || cityVars.has(v)) {
-            return r
-          }
+      const index = this.locationRowIndex || {}
+
+      // Direct match by variants
+      for (const v of locVariants) {
+        const key = _norm(v)
+        if (index[key]) {
+          return index[key]
         }
       }
 
       // Alias-group matching including canonical name
-      for (const r of this.filteredData) {
-        const regionVars = _expandVariants(r.region)
-        const provinceVars = _expandVariants(r.province)
-        const cityVars = _expandVariants(r.city)
-        for (const [canonical, aliases] of Object.entries(REGION_ALIASES)) {
-          const aliasSet = new Set(aliases.map(a => _norm(a)))
-          aliasSet.add(_norm(canonical))
-          let locationInGroup = false
-          for (const v of locVariants) {
-            if (aliasSet.has(v)) { locationInGroup = true; break }
-          }
-          if (!locationInGroup) continue
-          // Check if any field variant is also in the same group
-          if ([...regionVars, ...provinceVars, ...cityVars].some(v => aliasSet.has(_norm(v)))) {
-            return r
+      for (const [canonical, aliases] of Object.entries(REGION_ALIASES)) {
+        const aliasSet = new Set(aliases.map(a => _norm(a)))
+        aliasSet.add(_norm(canonical))
+        let locationInGroup = false
+        for (const v of locVariants) {
+          if (aliasSet.has(v)) { locationInGroup = true; break }
+        }
+        if (!locationInGroup) continue
+
+        for (const a of aliasSet) {
+          if (index[a]) {
+            return index[a]
           }
         }
       }

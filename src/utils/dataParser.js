@@ -11,6 +11,7 @@ export function parseCSV(file) {
       header: true,
       dynamicTyping: true,
       skipEmptyLines: true,
+      worker: true,
       complete: (results) => {
         resolve(results.data)
       },
@@ -97,6 +98,7 @@ export async function importFromGoogleSheets(sheetUrl) {
         header: true,
         dynamicTyping: true,
         skipEmptyLines: true,
+        worker: true,
         complete: (results) => {
           resolve(results.data)
         },

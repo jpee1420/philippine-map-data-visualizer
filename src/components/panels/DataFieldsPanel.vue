@@ -38,6 +38,22 @@
             Groups data by {{ legendField }} (e.g., gender, nationality)
           </div>
         </div>
+
+        <div class="config-item">
+          <label>Filter Dimensions (Optional)</label>
+          <n-select
+            v-model:value="filterDimensions"
+            :options="dimensionOptions"
+            multiple
+            clearable
+            size="small"
+            placeholder="Select fields to use as filters"
+            @update:value="handleFilterDimensionsChange"
+          />
+          <div v-if="filterDimensions && filterDimensions.length" class="field-hint">
+            Multi-select legends for {{ filterDimensions.join(', ') }}.
+          </div>
+        </div>
         
         <div class="config-item">
           <label>Color Scale</label>
@@ -97,6 +113,7 @@ const dataStore = useDataStore()
 // Map configuration fields
 const selectedMetrics = ref([])
 const legendField = ref(null)
+const filterDimensions = ref([])
 const showCallouts = ref(dataStore.showCalloutLabels)
 
 // Metric options from store-detected metrics
@@ -144,6 +161,12 @@ const handleLegendChange = (field) => {
   } else {
     dataStore.legendCategories = []
   }
+}
+
+// Handle filter dimensions change
+const handleFilterDimensionsChange = (fields) => {
+  filterDimensions.value = fields || []
+  dataStore.setFilterDimensions(filterDimensions.value)
 }
 
 // Handle callout toggle

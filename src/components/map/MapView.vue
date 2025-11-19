@@ -343,15 +343,20 @@ function renderGeoJSON(geoData) {
         if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
           row = dataStore.findRowByLocation(dataStore.mapFocus)
         }
-        const selectionActive = Array.isArray(dataStore.legendSelected) && dataStore.legendSelected.length > 0
-        const selSet = selectionActive ? new Set(dataStore.legendSelected.map(String)) : null
-        const categoryValue = row ? row[dataStore.legendField] : null
-        const inSelection = !selectionActive || (categoryValue != null && selSet.has(String(categoryValue)))
-        if (!inSelection) {
-          fillColor = '#cccccc'
+        // No data for this location after filters -> neutral fill
+        if (!row) {
+          fillColor = '#ffffff'
         } else {
-          const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
-          fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
+          const selectionActive = Array.isArray(dataStore.legendSelected) && dataStore.legendSelected.length > 0
+          const selSet = selectionActive ? new Set(dataStore.legendSelected.map(String)) : null
+          const categoryValue = row[dataStore.legendField]
+          const inSelection = !selectionActive || (categoryValue != null && selSet.has(String(categoryValue)))
+          if (!inSelection) {
+            fillColor = '#cccccc'
+          } else {
+            const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
+            fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
+          }
         }
       } else {
         // Otherwise, color by metric value
@@ -360,7 +365,12 @@ function renderGeoJSON(geoData) {
         if ((value === null || isNaN(value)) && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
           value = dataStore.getValueForLocation(dataStore.mapFocus)
         }
-        fillColor = dataStore.getColorForValue(value)
+        // No data for this location after filters -> neutral fill
+        if (value === null || isNaN(value)) {
+          fillColor = '#ffffff'
+        } else {
+          fillColor = dataStore.getColorForValue(value)
+        }
       }
       
       // Hide internal boundaries if option is enabled
@@ -861,15 +871,20 @@ function updateLayerColors() {
           if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
             row = dataStore.findRowByLocation(dataStore.mapFocus)
           }
-          const selectionActive = Array.isArray(dataStore.legendSelected) && dataStore.legendSelected.length > 0
-          const selSet = selectionActive ? new Set(dataStore.legendSelected.map(String)) : null
-          const categoryValue = row ? row[dataStore.legendField] : null
-          const inSelection = !selectionActive || (categoryValue != null && selSet.has(String(categoryValue)))
-          if (!inSelection) {
-            fillColor = '#cccccc'
+          // No data for this location after filters -> neutral fill
+          if (!row) {
+            fillColor = '#ffffff'
           } else {
-            const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
-            fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
+            const selectionActive = Array.isArray(dataStore.legendSelected) && dataStore.legendSelected.length > 0
+            const selSet = selectionActive ? new Set(dataStore.legendSelected.map(String)) : null
+            const categoryValue = row[dataStore.legendField]
+            const inSelection = !selectionActive || (categoryValue != null && selSet.has(String(categoryValue)))
+            if (!inSelection) {
+              fillColor = '#cccccc'
+            } else {
+              const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
+              fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
+            }
           }
         } else {
           // Otherwise, color by metric value
@@ -877,7 +892,12 @@ function updateLayerColors() {
           if ((value === null || isNaN(value)) && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
             value = dataStore.getValueForLocation(dataStore.mapFocus)
           }
-          fillColor = dataStore.getColorForValue(value)
+          // No data for this location after filters -> neutral fill
+          if (value === null || isNaN(value)) {
+            fillColor = '#ffffff'
+          } else {
+            fillColor = dataStore.getColorForValue(value)
+          }
         }
         
         layer.setStyle({ fillColor })

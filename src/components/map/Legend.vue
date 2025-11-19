@@ -1,58 +1,99 @@
 <template>
   <div class="legend" v-if="showLegend">
     <n-card size="small" :bordered="false">
-      <!-- Categorical Legend -->
-      <div v-if="dataStore.legendField && allCategories.length > 0" class="legend-content">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-          <n-text strong>
-            {{ dataStore.legendField }}
-          </n-text>
-          <n-text v-if="dataStore.legendSelected.length > 0" depth="3" style="font-size:12px; cursor:pointer;" @click="clearSelections">
-            Clear
-          </n-text>
-        </div>
-        
-        <div class="category-list">
-          <div 
-            v-for="(name, idx) in allCategories" 
-            :key="name"
-            class="category-item"
-            :class="{ selected: isSelected(name) }"
-            @click="toggle(name)"
-          >
+      <div class="legend-content">
+        <!-- Categorical Legend (primary) -->
+        <div v-if="dataStore.legendField && allCategories.length > 0" style="margin-bottom: 12px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <n-text strong>
+              {{ dataStore.legendField }}
+            </n-text>
+            <n-text v-if="dataStore.legendSelected.length > 0" depth="3" style="font-size:12px; cursor:pointer;" @click="clearSelections">
+              Clear
+            </n-text>
+          </div>
+          
+          <div class="category-list">
             <div 
-              class="category-color"
-              :style="{ backgroundColor: getCategoryColor(getOriginalIndex(name)) }"
-            />
-            <n-text style="font-size: 12px;">
-              {{ name }}<span v-if="hasTotals">: {{ formatTotal(categoryTotals[name]) }}</span>
-            </n-text>   
+              v-for="(name, idx) in allCategories" 
+              :key="name"
+              class="category-item"
+              :class="{ selected: isSelected(name) }"
+              @click="toggle(name)"
+            >
+              <div 
+                class="category-color"
+                :style="{ backgroundColor: getCategoryColor(getOriginalIndex(name)) }"
+              />
+              <n-text style="font-size: 12px;">
+                {{ name }}<span v-if="hasTotals">: {{ formatTotal(categoryTotals[name]) }}</span>
+              </n-text>   
+            </div>
           </div>
         </div>
-      </div>
-      
-      <!-- Numeric Color Scale Legend -->
-      <div v-else-if="dataStore.selectedMetric" class="legend-content">
-        <n-text strong style="margin-bottom: 12px; display: block;">
-          {{ dataStore.selectedMetric }}
-        </n-text>
-        
-        <div class="color-scale">
-          <div 
-            v-for="(color, index) in colorScale.colors" 
-            :key="index"
-            class="color-block"
-            :style="{ backgroundColor: color }"
-          />
+
+        <!-- Filter Dimension Legends -->
+        <div
+          v-for="panel in filterPanels"
+          :key="panel.field"
+          style="margin-bottom: 12px;"
+        >
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <n-text strong>
+              {{ panel.field }}
+            </n-text>
+            <n-text
+              v-if="panel.hasSelection"
+              depth="3"
+              style="font-size:12px; cursor:pointer;"
+              @click="clearFilter(panel.field)"
+            >
+              Clear
+            </n-text>
+          </div>
+
+          <div class="category-list">
+            <div
+              v-for="name in panel.categories"
+              :key="name"
+              class="category-item"
+              :class="{ selected: isFilterSelected(panel.field, name) }"
+              @click="toggleFilter(panel.field, name)"
+            >
+              <div
+                class="category-color"
+                :style="{ backgroundColor: getCategoryColor(panel.categories.indexOf(name)) }"
+              />
+              <n-text style="font-size: 12px;">
+                {{ name }}
+              </n-text>
+            </div>
+          </div>
         </div>
         
-        <div class="scale-labels">
-          <n-text depth="3" style="font-size: 12px;">
-            {{ colorScale.min.toLocaleString('en-US', { maximumFractionDigits: 0 }) }}
+        <!-- Numeric Color Scale Legend (only when no categorical legend is active) -->
+        <div v-if="!dataStore.legendField && dataStore.selectedMetric" class="legend-content">
+          <n-text strong style="margin-bottom: 12px; display: block;">
+            {{ dataStore.selectedMetric }}
           </n-text>
-          <n-text depth="3" style="font-size: 12px;">
-            {{ colorScale.max.toLocaleString('en-US', { maximumFractionDigits: 0 }) }}
-          </n-text>
+          
+          <div class="color-scale">
+            <div 
+              v-for="(color, index) in colorScale.colors" 
+              :key="index"
+              class="color-block"
+              :style="{ backgroundColor: color }"
+            />
+          </div>
+          
+          <div class="scale-labels">
+            <n-text depth="3" style="font-size: 12px;">
+              {{ colorScale.min.toLocaleString('en-US', { maximumFractionDigits: 0 }) }}
+            </n-text>
+            <n-text depth="3" style="font-size: 12px;">
+              {{ colorScale.max.toLocaleString('en-US', { maximumFractionDigits: 0 }) }}
+            </n-text>
+          </div>
         </div>
       </div>
     </n-card>
@@ -89,6 +130,43 @@ const clearSelections = () => {
   dataStore.clearLegendSelections()
 }
 
+const filterPanels = computed(() => {
+  const dims = dataStore.filterDimensions || []
+  const rows = dataStore.dataset || []
+  const selections = dataStore.filterSelections || {}
+  const panels = []
+  for (const field of dims) {
+    const set = new Set()
+    for (const row of rows) {
+      const v = row[field]
+      if (v !== null && v !== undefined && v !== '') {
+        set.add(v)
+      }
+    }
+    const categories = Array.from(set)
+    const selected = Array.isArray(selections[field]) ? selections[field] : []
+    panels.push({
+      field,
+      categories,
+      hasSelection: selected.length > 0
+    })
+  }
+  return panels
+})
+
+const isFilterSelected = (field, name) => {
+  const selections = (dataStore.filterSelections && dataStore.filterSelections[field]) || []
+  return selections.map(String).includes(String(name))
+}
+
+const toggleFilter = (field, name) => {
+  dataStore.toggleFilterSelection(field, name)
+}
+
+const clearFilter = (field) => {
+  dataStore.clearFilterSelections(field)
+}
+
 // Per-category totals for the selected metric
 const hasTotals = computed(() => !!dataStore.selectedMetric && !!dataStore.legendField)
 const categoryTotals = computed(() => {
@@ -113,7 +191,11 @@ const formatTotal = (num) => {
 }
 
 const showLegend = computed(() => {
-  return (dataStore.legendField && allCategories.value.length > 0) || dataStore.selectedMetric
+  return (
+    (dataStore.legendField && allCategories.value.length > 0) ||
+    dataStore.selectedMetric ||
+    (filterPanels.value && filterPanels.value.length > 0)
+  )
 })
 
 // Generate distinct colors for categories

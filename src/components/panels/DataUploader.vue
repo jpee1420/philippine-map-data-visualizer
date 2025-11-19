@@ -153,6 +153,7 @@ async function loadSampleData() {
         header: true,
         dynamicTyping: true,
         skipEmptyLines: true,
+        worker: true,
         complete: (results) => resolve(results.data),
         error: (error) => reject(error)
       })
