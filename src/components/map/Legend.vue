@@ -1,18 +1,37 @@
 <template>
   <div class="legend" v-if="showLegend">
-    <n-card size="small" :bordered="false">
-      <div class="legend-content">
-        <!-- Categorical Legend (primary) -->
-        <div v-if="dataStore.legendField && allCategories.length > 0" style="margin-bottom: 12px;">
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-            <n-text strong>
-              {{ dataStore.legendField }}
-            </n-text>
-            <n-text v-if="dataStore.legendSelected.length > 0" depth="3" style="font-size:12px; cursor:pointer;" @click="clearSelections">
+    <div class="legend-content">
+      <!-- Categorical Legend (primary) -->
+      <n-card
+        v-if="dataStore.legendField && allCategories.length > 0"
+        size="small"
+        :bordered="false"
+        class="legend-card"
+      >
+        <div class="legend-section-header">
+          <n-text strong>
+            {{ dataStore.legendField }}
+          </n-text>
+          <div class="legend-section-actions">
+            <n-text
+              v-if="dataStore.legendSelected.length > 0"
+              depth="3"
+              style="font-size:12px; cursor:pointer;"
+              @click="clearSelections"
+            >
               Clear
             </n-text>
+            <button
+              class="legend-collapse-btn"
+              type="button"
+              @click="toggleCategoryCollapse"
+            >
+              {{ collapsedCategory ? 'Show' : 'Hide' }}
+            </button>
           </div>
-          
+        </div>
+        
+        <div v-if="!collapsedCategory" class="legend-card-body">
           <div class="category-list">
             <div 
               v-for="(name, idx) in allCategories" 
@@ -31,17 +50,21 @@
             </div>
           </div>
         </div>
+      </n-card>
 
-        <!-- Filter Dimension Legends -->
-        <div
-          v-for="panel in filterPanels"
-          :key="panel.field"
-          style="margin-bottom: 12px;"
-        >
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-            <n-text strong>
-              {{ panel.field }}
-            </n-text>
+      <!-- Filter Dimension Legends -->
+      <n-card
+        v-for="panel in filterPanels"
+        :key="panel.field"
+        size="small"
+        :bordered="false"
+        class="legend-card"
+      >
+        <div class="legend-section-header">
+          <n-text strong>
+            {{ panel.field }}
+          </n-text>
+          <div class="legend-section-actions">
             <n-text
               v-if="panel.hasSelection"
               depth="3"
@@ -50,8 +73,17 @@
             >
               Clear
             </n-text>
+            <button
+              class="legend-collapse-btn"
+              type="button"
+              @click="toggleFilterCollapse(panel.field)"
+            >
+              {{ isFilterCollapsed(panel.field) ? 'Show' : 'Hide' }}
+            </button>
           </div>
+        </div>
 
+        <div v-if="!isFilterCollapsed(panel.field)" class="legend-card-body">
           <div class="category-list">
             <div
               v-for="name in panel.categories"
@@ -70,38 +102,13 @@
             </div>
           </div>
         </div>
-        
-        <!-- Numeric Color Scale Legend (only when no categorical legend is active) -->
-        <div v-if="!dataStore.legendField && dataStore.selectedMetric" class="legend-content">
-          <n-text strong style="margin-bottom: 12px; display: block;">
-            {{ dataStore.selectedMetric }}
-          </n-text>
-          
-          <div class="color-scale">
-            <div 
-              v-for="(color, index) in colorScale.colors" 
-              :key="index"
-              class="color-block"
-              :style="{ backgroundColor: color }"
-            />
-          </div>
-          
-          <div class="scale-labels">
-            <n-text depth="3" style="font-size: 12px;">
-              {{ colorScale.min.toLocaleString('en-US', { maximumFractionDigits: 0 }) }}
-            </n-text>
-            <n-text depth="3" style="font-size: 12px;">
-              {{ colorScale.max.toLocaleString('en-US', { maximumFractionDigits: 0 }) }}
-            </n-text>
-          </div>
-        </div>
-      </div>
-    </n-card>
+      </n-card>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { NCard, NText } from 'naive-ui'
 import { useDataStore } from '@/store/dataStore'
 
@@ -154,6 +161,31 @@ const filterPanels = computed(() => {
   return panels
 })
 
+const collapsedCategory = ref(false)
+const collapsedNumeric = ref(false)
+const collapsedFilters = ref({})
+
+const toggleCategoryCollapse = () => {
+  collapsedCategory.value = !collapsedCategory.value
+}
+
+const toggleNumericCollapse = () => {
+  collapsedNumeric.value = !collapsedNumeric.value
+}
+
+const isFilterCollapsed = (field) => {
+  const key = String(field)
+  return !!collapsedFilters.value[key]
+}
+
+const toggleFilterCollapse = (field) => {
+  const key = String(field)
+  collapsedFilters.value = {
+    ...collapsedFilters.value,
+    [key]: !collapsedFilters.value[key]
+  }
+}
+
 const isFilterSelected = (field, name) => {
   const selections = (dataStore.filterSelections && dataStore.filterSelections[field]) || []
   return selections.map(String).includes(String(name))
@@ -173,8 +205,11 @@ const categoryTotals = computed(() => {
   const totals = {}
   if (!dataStore.selectedMetric || !dataStore.legendField) return totals
   for (const name of dataStore.legendCategories) totals[name] = 0
-  // Use the full dataset so totals remain stable even when selections are applied
-  for (const row of dataStore.dataset || []) {
+  // Use filteredData when available so totals always reflect the currently visible data
+  const rows = dataStore.filteredData && dataStore.filteredData.length > 0
+    ? dataStore.filteredData
+    : dataStore.dataset || []
+  for (const row of rows) {
     const cat = row[dataStore.legendField]
     const val = parseFloat(row[dataStore.selectedMetric])
     if (cat != null && !isNaN(val)) {
@@ -193,7 +228,6 @@ const formatTotal = (num) => {
 const showLegend = computed(() => {
   return (
     (dataStore.legendField && allCategories.value.length > 0) ||
-    dataStore.selectedMetric ||
     (filterPanels.value && filterPanels.value.length > 0)
   )
 })
@@ -217,11 +251,51 @@ const getCategoryColor = (index) => {
   right: 20px;
   z-index: 1000;
   min-width: 200px;
+  max-width: 50%;
 }
 
 .legend-content {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.legend-card {
+  flex: 0 0 auto;
+  margin-bottom: 12px;
+  margin-right: 12px;
+  width: 240px;
+}
+
+.legend-card-body {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.legend-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.legend-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-collapse-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.legend-collapse-btn:hover {
+  color: #111827;
 }
 
 .color-scale {

@@ -51,6 +51,13 @@
           <n-text strong>Provinces in {{ selectedRegion }}</n-text>
           <div class="checkbox-list">
             <n-checkbox
+              v-if="subdivisions.length > 0"
+              :checked="areAllSubdivisionsSelected"
+              @update:checked="toggleSelectAll"
+            >
+              Select all
+            </n-checkbox>
+            <n-checkbox
               v-for="item in subdivisions"
               :key="item.code"
               :checked="isSubdivisionChecked(item.code)"
@@ -64,6 +71,13 @@
         <div v-if="selectedLevel === 'provinces' && selectedProvince" class="selector-group">
           <n-text strong>Cities/Municipalities in {{ selectedProvince }}</n-text>
           <div class="checkbox-list">
+            <n-checkbox
+              v-if="subdivisions.length > 0"
+              :checked="areAllSubdivisionsSelected"
+              @update:checked="toggleSelectAll"
+            >
+              Select all
+            </n-checkbox>
             <n-checkbox
               v-for="item in subdivisions"
               :key="item.code"
@@ -108,6 +122,13 @@ const availableProvinces = ref([])
 // Subdivisions within current focus
 const subdivisions = ref([])
 const selectedSubdivisionSet = ref(new Set())
+
+const areAllSubdivisionsSelected = computed(() => {
+  if (!subdivisions.value.length) return false
+  return subdivisions.value.every(it =>
+    selectedSubdivisionSet.value.has(String(it.code))
+  )
+})
 
 // Computed options for selects
 const regionOptions = computed(() => 
@@ -176,6 +197,17 @@ function toggleSubdivision(item, checked) {
   dataStore.setSelectedSubdivisions(Array.from(selectedSubdivisionSet.value))
 }
 
+function toggleSelectAll(checked) {
+  if (checked) {
+    selectedSubdivisionSet.value = new Set(
+      subdivisions.value.map(it => String(it.code))
+    )
+  } else {
+    selectedSubdivisionSet.value = new Set()
+  }
+  dataStore.setSelectedSubdivisions(Array.from(selectedSubdivisionSet.value))
+}
+
 function clearSubdivisions() {
   selectedSubdivisionSet.value.clear()
   subdivisions.value = []
@@ -206,6 +238,8 @@ async function loadSubdivisions() {
 					.filter(it => it.name)
 				const unique = new Map(items.map(it => [it.code, it]))
 				subdivisions.value = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
+				selectedSubdivisionSet.value = new Set(subdivisions.value.map(it => String(it.code)))
+				dataStore.setSelectedSubdivisions(Array.from(selectedSubdivisionSet.value))
 			} catch (e) {
 				console.warn('Failed to load ADM3 for NCR city/municipality subdivisions:', e)
 				subdivisions.value = []
@@ -230,6 +264,8 @@ async function loadSubdivisions() {
 					.filter(it => it.name)
 				const unique = new Map(items.map(it => [it.code, it]))
 				subdivisions.value = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
+				selectedSubdivisionSet.value = new Set(subdivisions.value.map(it => String(it.code)))
+				dataStore.setSelectedSubdivisions(Array.from(selectedSubdivisionSet.value))
 			} catch (e) {
 				console.warn('Failed to load ADM2 for region subdivisions:', e)
 				subdivisions.value = []
@@ -272,6 +308,8 @@ async function loadSubdivisions() {
 				.filter(it => it.name)
 			const unique = new Map(items.map(it => [it.code, it]))
 			subdivisions.value = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
+			selectedSubdivisionSet.value = new Set(subdivisions.value.map(it => String(it.code)))
+			dataStore.setSelectedSubdivisions(Array.from(selectedSubdivisionSet.value))
 		} catch (e) {
 			console.warn('Failed to load ADM3 for province subdivisions:', e)
 			subdivisions.value = []
@@ -336,7 +374,12 @@ watch([selectedLevel, selectedRegion, selectedProvince], () => {
 }
 
 .checkbox-list :deep(.n-checkbox) {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.checkbox-list :deep(.n-checkbox .n-checkbox__label) {
   white-space: normal;
 }
 </style>

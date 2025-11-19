@@ -145,6 +145,40 @@ function _expandVariants(name) {
   return variants
 }
 
+// Determine if a dataset region value matches a focused region name,
+// using direct variant comparison plus REGION_ALIASES groups.
+function _isRegionMatch(rowRegion, focusRegion) {
+  if (!rowRegion || !focusRegion) return false
+  const rowVars = _expandVariants(rowRegion)
+  const focusVars = _expandVariants(focusRegion)
+
+  // Direct variant intersection
+  for (const v of rowVars) {
+    if (focusVars.has(v)) return true
+  }
+
+  // Alias-group matching (e.g., "Region I" vs "Ilocos Region")
+  for (const [canonical, aliases] of Object.entries(REGION_ALIASES)) {
+    const aliasSet = new Set(aliases.map(a => _norm(a)))
+    aliasSet.add(_norm(canonical))
+
+    let rowInGroup = false
+    let focusInGroup = false
+
+    for (const v of rowVars) {
+      if (aliasSet.has(v)) { rowInGroup = true; break }
+    }
+    if (!rowInGroup) continue
+
+    for (const v of focusVars) {
+      if (aliasSet.has(v)) { focusInGroup = true; break }
+    }
+    if (focusInGroup) return true
+  }
+
+  return false
+}
+
 export const useDataStore = defineStore('dataStore', {
   state: () => ({
     dataset: [],
@@ -255,6 +289,24 @@ export const useDataStore = defineStore('dataStore', {
     // Legend-based and dimension-based filtering
     applyLegendFilter() {
       let rows = this.dataset.slice()
+
+      // Map-level filtering from MapSelector: restrict rows to selected
+      // region or province when present. If no rows match, fall back to
+      // the full dataset so the table doesn't appear empty.
+      if (this.mapFocus) {
+        if (this.mapLevel === 'regions') {
+          const regionFiltered = rows.filter(row => _isRegionMatch(row.region, this.mapFocus))
+          if (regionFiltered.length > 0) {
+            rows = regionFiltered
+          }
+        } else if (this.mapLevel === 'provinces') {
+          const targetProvince = _norm(this.mapFocus)
+          const provinceFiltered = rows.filter(row => _norm(row.province) === targetProvince)
+          if (provinceFiltered.length > 0) {
+            rows = provinceFiltered
+          }
+        }
+      }
 
       if (Array.isArray(this.filterDimensions) && this.filterDimensions.length > 0) {
         const dims = this.filterDimensions
@@ -448,10 +500,12 @@ export const useDataStore = defineStore('dataStore', {
     setMapLevel(level) {
       this.mapLevel = level
       this.mapFocus = null // Clear focus when changing levels
+      this.applyLegendFilter()
     },
     
     setMapFocus(location) {
       this.mapFocus = location
+      this.applyLegendFilter()
     },
     
     setSelectedSubdivisions(subdivisions) {
