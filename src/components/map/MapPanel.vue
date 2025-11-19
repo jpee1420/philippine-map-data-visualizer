@@ -2,7 +2,6 @@
   <div class="map-panel">    
     <div class="map-container">
       <MapView ref="mapViewRef" />
-      <Legend />
     </div>
   </div>
 </template>
@@ -10,7 +9,6 @@
 <script setup>
 import { ref } from 'vue'
 import MapView from '@/components/map/MapView.vue'
-import Legend from '@/components/map/Legend.vue'
 
 const mapViewRef = ref(null)
 

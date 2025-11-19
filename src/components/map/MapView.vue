@@ -1,6 +1,25 @@
 <template>
   <div class="map-container">
     <div ref="mapElement" id="map" class="map"></div>
+    <div class="map-options-overlay">
+      <div class="map-options-card">
+        <div class="map-options-row">
+          <span class="map-options-label">Color Scale</span>
+          <n-select
+            v-model:value="colorScheme"
+            :options="colorSchemeOptions"
+            size="tiny"
+          />
+        </div>
+        <div class="map-options-row">
+          <span class="map-options-label">Callout Labels</span>
+          <n-switch
+            v-model:value="showCallouts"
+            size="small"
+          />
+        </div>
+      </div>
+    </div>
     <div v-if="loading" class="map-loading">
       <n-spin size="large" />
       <p>Loading map...</p>
@@ -9,8 +28,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
-import { NSpin } from 'naive-ui'
+import { ref, onMounted, watch, computed } from 'vue'
+import { NSpin, NSelect, NSwitch } from 'naive-ui'
+
 import L from 'leaflet'
 import union from '@turf/union'
 import { useDataStore } from '@/store/dataStore'
@@ -25,6 +45,37 @@ const map = ref(null)
 const geoLayer = ref(null)
 const calloutLayer = ref(null)
 const loading = ref(false)
+const colorScheme = ref('blue')
+
+const colorSchemeOptions = [
+  { label: 'Blue', value: 'blue' },
+  { label: 'Red', value: 'red' },
+  { label: 'Green', value: 'green' },
+  { label: 'Purple', value: 'purple' },
+  { label: 'Orange', value: 'orange' }
+]
+
+const showCallouts = computed({
+  get: () => dataStore.showCalloutLabels,
+  set: (val) => dataStore.setShowCalloutLabels(val)
+})
+
+watch(colorScheme, (newScheme) => {
+  const colorMaps = {
+    red: ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15'],
+    blue: ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c'],
+    green: ['#edf8e9', '#bae4b3', '#74c476', '#31a354', '#006d2c'],
+    purple: ['#f2f0f7', '#cbc9e2', '#9e9ac8', '#756bb1', '#54278f'],
+    orange: ['#feedde', '#fdbe85', '#fd8d3c', '#e6550d', '#a63603']
+  }
+  const newColors = colorMaps[newScheme]
+  if (!newColors) return
+  dataStore.colorScale = {
+    ...dataStore.colorScale,
+    colors: newColors
+  }
+})
+
 const lastFocusZoomed = ref(null) // Track last focus that was zoomed
 const userHasMoved = ref(false) // Track if user has manually moved map after auto-fit
 
@@ -970,8 +1021,41 @@ watch(() => map.value, (newMap) => {
   position: relative;
   width: 100%;
   height: 100%;
+
   min-height: 500px;
   background: #f8f9fa;
+}
+
+.map-options-overlay {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 500;
+  pointer-events: none;
+}
+
+.map-options-card {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.map-options-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.map-options-label {
+  font-size: 11px;
+  color: #4b5563;
 }
 
 .map,
