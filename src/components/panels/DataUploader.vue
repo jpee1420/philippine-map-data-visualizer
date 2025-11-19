@@ -9,6 +9,7 @@
             :show-file-list="true"
             accept=".csv,.xlsx,.xls,.json"
             :max="1"
+            :on-remove="handleFileRemove"
           >
             <n-button>
               📁 Select File
@@ -112,6 +113,12 @@ async function handleFileUpload({ file, onFinish, onError }) {
   }
 }
 
+function handleFileRemove() {
+  dataStore.clearDataset()
+  successMessage.value = ''
+  errorMessage.value = ''
+}
+
 async function handleGoogleSheets() {
   if (!sheetsUrl.value) {
     errorMessage.value = 'Please enter a Google Sheets URL'
@@ -188,6 +195,7 @@ async function loadSampleDataWithBreakdowns() {
         header: true,
         dynamicTyping: true,
         skipEmptyLines: true,
+        worker: true,
         complete: (results) => resolve(results.data),
         error: (error) => reject(error)
       })

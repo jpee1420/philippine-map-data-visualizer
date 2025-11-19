@@ -177,8 +177,8 @@ const handleCalloutToggle = (value) => {
 const colorScheme = ref('blue')
 
 const colorSchemeOptions = [
-  { label: 'Default (Red)', value: 'default' },
   { label: 'Blue', value: 'blue' },
+  { label: 'Red', value: 'red' },
   { label: 'Green', value: 'green' },
   { label: 'Purple', value: 'purple' },
   { label: 'Orange', value: 'orange' }
@@ -187,7 +187,7 @@ const colorSchemeOptions = [
 // Watch for color scheme changes and update store
 watch(colorScheme, (newScheme) => {
   const colorMaps = {
-    'default': ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15'],
+    'red': ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15'],
     'blue': ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c'],
     'green': ['#edf8e9', '#bae4b3', '#74c476', '#31a354', '#006d2c'],
     'purple': ['#f2f0f7', '#cbc9e2', '#9e9ac8', '#756bb1', '#54278f'],
@@ -218,6 +218,18 @@ const formatNumber = (num) => {
     maximumFractionDigits: 2
   })
 }
+
+// Reset local selections when dataset is cleared
+watch(
+  () => dataStore.dataset,
+  (newDataset) => {
+    if (!newDataset || newDataset.length === 0) {
+      selectedMetrics.value = []
+      legendField.value = null
+      filterDimensions.value = []
+    }
+  }
+)
 </script>
 
 <style scoped>

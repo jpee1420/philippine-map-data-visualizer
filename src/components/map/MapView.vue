@@ -431,7 +431,8 @@ function renderGeoJSON(geoData) {
       
       layer.bindTooltip(tooltipContent, { 
         permanent: false, 
-        direction: 'center',
+        direction: 'top',
+        sticky: true,
         className: 'custom-tooltip'
       })
       

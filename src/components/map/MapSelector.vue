@@ -8,7 +8,7 @@
           <n-radio-group v-model:value="selectedLevel" @update:value="handleLevelChange">
             <n-space vertical>
               <n-radio value="country">
-                🇵🇭 Philippines (Country)
+                Country
               </n-radio>
               <n-radio value="regions">
                 Regions

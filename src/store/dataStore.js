@@ -199,8 +199,36 @@ export const useDataStore = defineStore('dataStore', {
     setDataset(data) {
       // Normalize headers so we always have region/province/city fields regardless of input casing
       this.dataset = normalizeDatasetColumns(data)
+
+      // Reset data-dependent state so nothing is carried over from previous imports
+      this.filteredData = []
+      this.locationRowIndex = {}
+      this.availableMetrics = []
+      this.selectedMetric = null
+      this.selectedMetrics = []
+      this.legendField = null
+      this.legendCategories = []
+      this.legendSelected = []
+      this.filterDimensions = []
+      this.filterSelections = {}
+
       this.detectMetrics()
       this.applyLegendFilter()
+    },
+    
+    clearDataset() {
+      this.dataset = []
+      this.filteredData = []
+      this.locationRowIndex = {}
+      this.availableMetrics = []
+      this.selectedMetric = null
+      this.selectedMetrics = []
+      this.legendField = null
+      this.legendCategories = []
+      this.legendSelected = []
+      this.filterDimensions = []
+      this.filterSelections = {}
+      this.updateColorScale()
     },
     
     setGeoData(geo) {
@@ -217,10 +245,6 @@ export const useDataStore = defineStore('dataStore', {
         return !excludeColumns.includes(key.toLowerCase()) && 
                !isNaN(parseFloat(firstRow[key]))
       })
-      
-      if (this.availableMetrics.length > 0 && !this.selectedMetric) {
-        this.selectedMetric = this.availableMetrics[0]
-      }
     },
     
     setSelectedMetric(metric) {
