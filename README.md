@@ -1,4 +1,4 @@
-# 🗺️ Vue 3 + Leaflet + ECharts - Philippine Map Visualizer
+# 🗺️Philippine Map Data Visualizer
 
 A powerful visualization framework for Philippine data mapping with multi-level filtering, metric overlays, and data import from CSV, Excel, JSON, and Google Sheets.
 

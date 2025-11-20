@@ -314,20 +314,35 @@ export const useDataStore = defineStore('dataStore', {
         }
       }
 
-      if (Array.isArray(this.filterDimensions) && this.filterDimensions.length > 0) {
-        const dims = this.filterDimensions
+      const filterDimsRaw = [
+        ...(Array.isArray(this.filterDimensions) ? this.filterDimensions : []),
+        ...(Array.isArray(this.axisFields) ? this.axisFields : [])
+      ]
+
+      if (filterDimsRaw.length > 0) {
+        const dims = Array.from(new Set(filterDimsRaw.map(f => String(f))))
         const selections = this.filterSelections || {}
+
+        const selectionSets = {}
+        for (const field of dims) {
+          const raw = selections[field]
+          if (Array.isArray(raw)) {
+            const arr = raw.map(v => String(v))
+            selectionSets[field] = new Set(arr)
+          } else {
+            selectionSets[field] = null
+          }
+        }
+
         rows = rows.filter(row => {
           for (const field of dims) {
-            const selected = Array.isArray(selections[field]) ? selections[field] : []
-            if (selected.length === 0) continue
+            const set = selectionSets[field]
+            if (!set) continue // no explicit filter for this field
+            if (set.size === 0) return false // explicit "no values" selection
+
             const val = row[field]
             const strVal = String(val)
-            let matched = false
-            for (const s of selected) {
-              if (String(s) === strVal) { matched = true; break }
-            }
-            if (!matched) return false
+            if (!set.has(strVal)) return false
           }
           return true
         })
@@ -411,8 +426,10 @@ export const useDataStore = defineStore('dataStore', {
       const nextSelections = {}
       const current = this.filterSelections || {}
       for (const f of nextFields) {
-        const existing = Array.isArray(current[f]) ? current[f] : []
-        nextSelections[f] = existing.slice()
+        const existing = current[f]
+        if (Array.isArray(existing)) {
+          nextSelections[f] = existing.slice()
+        }
       }
       this.filterDimensions = nextFields
       this.filterSelections = nextSelections
@@ -446,32 +463,38 @@ export const useDataStore = defineStore('dataStore', {
       this.setSelectedMetric(first)
     },
 
+    setFilterSelectionsForField(field, values) {
+      const key = String(field)
+      const current = this.filterSelections || {}
+      const next = { ...current }
+
+      if (values == null) {
+        // No explicit filter for this field
+        delete next[key]
+      } else if (Array.isArray(values)) {
+        next[key] = values
+      } else {
+        delete next[key]
+      }
+
+      this.filterSelections = next
+      this.applyLegendFilter()
+    },
+
     toggleFilterSelection(field, value) {
       const key = String(field)
       const val = String(value)
       const current = this.filterSelections || {}
-      const existing = Array.isArray(current[key]) ? current[key].map(v => String(v)) : []
+      const existingRaw = current[key]
+      const existing = Array.isArray(existingRaw) ? existingRaw.map(v => String(v)) : []
       const set = new Set(existing)
       if (set.has(val)) set.delete(val); else set.add(val)
-      this.filterSelections = {
-        ...current,
-        [key]: Array.from(set)
-      }
-      this.applyLegendFilter()
+      this.setFilterSelectionsForField(key, Array.from(set))
     },
 
     clearFilterSelections(field) {
       if (!field) return
-      const key = String(field)
-      const current = this.filterSelections || {}
-      if (!current[key] || (Array.isArray(current[key]) && current[key].length === 0)) {
-        return
-      }
-      this.filterSelections = {
-        ...current,
-        [key]: []
-      }
-      this.applyLegendFilter()
+      this.setFilterSelectionsForField(field, null)
     },
     
     _rebuildLocationIndex() {
@@ -573,6 +596,98 @@ export const useDataStore = defineStore('dataStore', {
         if (!isNaN(val)) { sum += val; matched = true }
       }
       return matched ? sum : null
+    },
+    
+    // Get all filtered rows that belong to the given location name, matching
+    // by city, then province, then region (using variant-aware region matching).
+    _getRowsForLocation(location) {
+      if (!location) return []
+      const targetNorm = _norm(location)
+      const rows = this.filteredData || []
+      const results = []
+
+      for (const r of rows) {
+        if (!r) continue
+
+        // City-level match
+        if (r.city && _norm(r.city) === targetNorm) {
+          results.push(r)
+          continue
+        }
+
+        // Province-level match
+        if (r.province && _norm(r.province) === targetNorm) {
+          results.push(r)
+          continue
+        }
+
+        // Region-level match (uses alias-aware matcher)
+        if (_isRegionMatch(r.region, location)) {
+          results.push(r)
+        }
+      }
+
+      return results
+    },
+
+    // Aggregate current valueFields for a given location using filteredData.
+    // For agg === 'count' on a categorical field, returns counts per value.
+    // For numeric fields (sum/avg), returns sum, avg and row count.
+    getLocationAggregates(location) {
+      if (!location) return null
+
+      const rows = this._getRowsForLocation(location)
+      if (!rows || rows.length === 0) return null
+
+      const defs = Array.isArray(this.valueFields) ? this.valueFields : []
+      if (defs.length === 0) return null
+
+      const summaries = []
+
+      for (const def of defs) {
+        if (!def || !def.field) continue
+        const field = def.field
+        const agg = def.agg || 'sum'
+
+        if (agg === 'count') {
+          const counts = {}
+          let total = 0
+          for (const row of rows) {
+            const raw = row[field]
+            const key = raw === null || raw === undefined || raw === ''
+              ? '(blank)'
+              : String(raw)
+            counts[key] = (counts[key] || 0) + 1
+            total += 1
+          }
+          summaries.push({ field, agg: 'count', total, counts })
+        } else {
+          let sum = 0
+          let n = 0
+          for (const row of rows) {
+            const v = parseFloat(row[field])
+            if (!isNaN(v)) {
+              sum += v
+              n += 1
+            }
+          }
+          const avg = n > 0 ? sum / n : null
+          summaries.push({
+            field,
+            agg,
+            sum: n > 0 ? sum : null,
+            avg,
+            count: n
+          })
+        }
+      }
+
+      if (summaries.length === 0) return null
+
+      return {
+        rowCount: rows.length,
+        valueSummaries: summaries
+      }
     },
     
     setMapLevel(level) {

@@ -86,6 +86,14 @@
                         @update:value="val => updateFilterSearch(name, val)"
                       />
                     </div>
+                    <div class="pivot-popover-selectall">
+                      <n-checkbox
+                        :checked="isFilterAllSelected(name)"
+                        @update:checked="checked => toggleFilterSelectAll(name, checked)"
+                      >
+                        (Select All)
+                      </n-checkbox>
+                    </div>
                     <div class="pivot-popover-list">
                       <div
                         v-for="val in getFilterVisibleValues(name)"
@@ -234,10 +242,44 @@
                   <div class="pivot-popover">
                     <div class="pivot-popover-header">
                       <span class="popover-title">{{ name }}</span>
+                      <button
+                        v-if="hasFilterSelections(name)"
+                        type="button"
+                        class="popover-action"
+                        @click.stop="clearFilterFieldSelections(name)"
+                      >
+                        Clear filter
+                      </button>
                     </div>
-                    <div class="pivot-popover-body">
-                      <div class="popover-hint">
-                        Axis fields are used for grouping and labels in charts and callouts.
+                    <div class="pivot-popover-search">
+                      <n-input
+                        :value="getFilterSearch(name)"
+                        size="tiny"
+                        placeholder="Search..."
+                        clearable
+                        @update:value="val => updateFilterSearch(name, val)"
+                      />
+                    </div>
+                    <div class="pivot-popover-selectall">
+                      <n-checkbox
+                        :checked="isFilterAllSelected(name)"
+                        @update:checked="checked => toggleFilterSelectAll(name, checked)"
+                      >
+                        (Select All)
+                      </n-checkbox>
+                    </div>
+                    <div class="pivot-popover-list">
+                      <div
+                        v-for="val in getFilterVisibleValues(name)"
+                        :key="String(val)"
+                        class="pivot-popover-item"
+                      >
+                        <n-checkbox
+                          :checked="isFilterValueChecked(name, val)"
+                          @update:checked="() => toggleFilterValue(name, val)"
+                        >
+                          {{ val }}
+                        </n-checkbox>
                       </div>
                     </div>
                   </div>
@@ -481,26 +523,61 @@ const getFilterVisibleValues = (field) => {
 
 const hasFilterSelections = (field) => {
   const key = String(field)
-  const sel = (dataStore.filterSelections && dataStore.filterSelections[key]) || []
-  return Array.isArray(sel) && sel.length > 0
+  const sel = dataStore.filterSelections && dataStore.filterSelections[key]
+  return Array.isArray(sel)
 }
 
 const isFilterAllSelected = (field) => {
+  const all = getFilterValuesForField(field).map(v => String(v))
   const key = String(field)
-  const sel = (dataStore.filterSelections && dataStore.filterSelections[key]) || []
-  return !Array.isArray(sel) || sel.length === 0
+  const raw = dataStore.filterSelections && dataStore.filterSelections[key]
+  if (!Array.isArray(raw)) return true // no explicit filter -> all selected
+  const sel = raw.map(v => String(v))
+  if (sel.length === 0) return false
+  if (sel.length !== all.length) return false
+  const set = new Set(sel)
+  return all.every(v => set.has(v))
 }
 
 const isFilterValueChecked = (field, value) => {
   const key = String(field)
-  const sel = (dataStore.filterSelections && dataStore.filterSelections[key]) || []
-  if (!Array.isArray(sel) || sel.length === 0) return true
+  const raw = dataStore.filterSelections && dataStore.filterSelections[key]
+  if (!Array.isArray(raw)) return true
+  const sel = raw.map(v => String(v))
+  if (sel.length === 0) return false
   const target = String(value)
-  return sel.map(v => String(v)).includes(target)
+  return sel.includes(target)
+}
+
+const toggleFilterSelectAll = (field, checked) => {
+  const key = String(field)
+  if (checked) {
+    // Select all -> no explicit filter for this field
+    dataStore.setFilterSelectionsForField(key, null)
+  } else {
+    // Deselect all -> explicit empty selection (no values allowed)
+    dataStore.setFilterSelectionsForField(key, [])
+  }
 }
 
 const toggleFilterValue = (field, value) => {
-  dataStore.toggleFilterSelection(field, value)
+  const key = String(field)
+  const all = getFilterValuesForField(field).map(v => String(v))
+  const raw = dataStore.filterSelections && dataStore.filterSelections[key]
+  let current = Array.isArray(raw) ? raw.map(v => String(v)) : all.slice()
+  const target = String(value)
+  const set = new Set(current)
+  if (set.has(target)) {
+    set.delete(target)
+  } else {
+    set.add(target)
+  }
+  const next = Array.from(set)
+  if (next.length === all.length) {
+    dataStore.setFilterSelectionsForField(key, null)
+  } else {
+    dataStore.setFilterSelectionsForField(key, next)
+  }
 }
 
 const clearFilterFieldSelections = (field) => {

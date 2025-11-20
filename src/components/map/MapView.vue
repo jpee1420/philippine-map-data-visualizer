@@ -440,44 +440,84 @@ function renderGeoJSON(geoData) {
     onEachFeature: (feature, layer) => {
       const locationName = getLocationName(feature)
       
-      // Build tooltip with multiple metrics if available
+      // Build tooltip content based on current pivot value fields and filtered data
       let tooltipContent = `<strong>${locationName}</strong><br/>`
-      
-      if (dataStore.selectedMetrics && dataStore.selectedMetrics.length > 0) {
-        // Show all selected metrics using alias-aware matching
+
+      const aggregates =
+        typeof dataStore.getLocationAggregates === 'function'
+          ? dataStore.getLocationAggregates(locationName)
+          : null
+
+      if (aggregates && aggregates.valueSummaries && aggregates.valueSummaries.length > 0) {
+        const lines = []
+
+        aggregates.valueSummaries.forEach((summary) => {
+          if (!summary || !summary.field) return
+
+          if (summary.agg === 'count') {
+            // Categorical count field (e.g. gender)
+            lines.push(`<strong>${summary.field} (Count)</strong>`)
+            const entries = Object.entries(summary.counts || {})
+            if (entries.length === 0) {
+              lines.push('No values')
+            } else {
+              entries.forEach(([val, count]) => {
+                const countText = typeof count === 'number'
+                  ? count.toLocaleString('en-US')
+                  : String(count)
+                lines.push(`${val}: ${countText}`)
+              })
+            }
+          } else {
+            // Numeric metric field (sum/avg)
+            const count = typeof summary.count === 'number' ? summary.count : 0
+            const sumText = summary.sum != null && !isNaN(summary.sum)
+              ? summary.sum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              : 'N/A'
+            const avgText = summary.avg != null && !isNaN(summary.avg)
+              ? summary.avg.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              : 'N/A'
+
+            lines.push(`<strong>${summary.field}</strong> (n=${count})`)
+            lines.push(`Sum: ${sumText}`)
+            lines.push(`Avg: ${avgText}`)
+          }
+        })
+
+        tooltipContent += lines.join('<br/>')
+      } else if (dataStore.selectedMetrics && dataStore.selectedMetrics.length > 0) {
+        // Fallback: show all selected numeric metrics from a representative row
         let row = dataStore.findRowByLocation(locationName)
         if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
           row = dataStore.findRowByLocation(dataStore.mapFocus)
         }
-        
+
         if (row) {
           const metricLines = dataStore.selectedMetrics.map(metric => {
             const value = parseFloat(row[metric])
-            const formattedValue = value !== null && !isNaN(value) 
+            const formattedValue = value !== null && !isNaN(value)
               ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
               : 'N/A'
             return `${metric}: ${formattedValue}`
           }).join('<br/>')
-          
+
           tooltipContent += metricLines
         } else {
           tooltipContent += 'No data available'
         }
-      } else {
-        // Fallback: show the single selected metric if available
-        if (dataStore.selectedMetric) {
-          let row = dataStore.findRowByLocation(locationName)
-          if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
-            row = dataStore.findRowByLocation(dataStore.mapFocus)
-          }
-          const value = row ? parseFloat(row[dataStore.selectedMetric]) : null
-          const formatted = value !== null && !isNaN(value)
-            ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            : 'N/A'
-          tooltipContent += `${dataStore.selectedMetric}: ${formatted}`
-        } else {
-          tooltipContent += 'No data available'
+      } else if (dataStore.selectedMetric) {
+        // Final fallback: single selected metric from a representative row
+        let row = dataStore.findRowByLocation(locationName)
+        if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+          row = dataStore.findRowByLocation(dataStore.mapFocus)
         }
+        const value = row ? parseFloat(row[dataStore.selectedMetric]) : null
+        const formatted = value !== null && !isNaN(value)
+          ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : 'N/A'
+        tooltipContent += `${dataStore.selectedMetric}: ${formatted}`
+      } else {
+        tooltipContent += 'No data available'
       }
       
       layer.bindTooltip(tooltipContent, { 
