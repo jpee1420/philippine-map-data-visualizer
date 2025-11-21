@@ -6575,7 +6575,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "PeÃ±ablanca",
+        "ADM3_EN": "Peñablanca",
         "ADM3_PCODE": "PH0201519",
         "ADM2_EN": "Cagayan",
         "ADM2_PCODE": "PH02015",
@@ -6926,7 +6926,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "Santo NiÃ±o (Faire)",
+        "ADM3_EN": "Santo Niño (Faire)",
         "ADM3_PCODE": "PH0201526",
         "ADM2_EN": "Cagayan",
         "ADM2_PCODE": "PH02015",
@@ -11631,7 +11631,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "DoÃ±a Remedios Trinidad",
+        "ADM3_EN": "Doña Remedios Trinidad",
         "ADM3_PCODE": "PH0301424",
         "ADM2_EN": "Bulacan",
         "ADM2_PCODE": "PH03014",
@@ -12458,7 +12458,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "Science City of MuÃ±oz",
+        "ADM3_EN": "Science City of Muñoz",
         "ADM3_PCODE": "PH0304917",
         "ADM2_EN": "Nueva Ecija",
         "ADM2_PCODE": "PH03049",
@@ -12659,7 +12659,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "PeÃ±aranda",
+        "ADM3_EN": "Peñaranda",
         "ADM3_PCODE": "PH0304921",
         "ADM2_EN": "Nueva Ecija",
         "ADM2_PCODE": "PH03049",
@@ -17892,7 +17892,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "City of DasmariÃ±as",
+        "ADM3_EN": "City of Dasmariñas",
         "ADM3_PCODE": "PH0402106",
         "ADM2_EN": "Cavite",
         "ADM2_PCODE": "PH04021",
@@ -18223,7 +18223,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "Mendez (Mendez-NuÃ±ez)",
+        "ADM3_EN": "Mendez (Mendez-Nuñez)",
         "ADM3_PCODE": "PH0402114",
         "ADM2_EN": "Cavite",
         "ADM2_PCODE": "PH04021",
@@ -18235,7 +18235,7 @@
         "validOn": "2023-11-06T00:00:00.000Z",
         "validTo": "1899-11-30T00:00:00.000Z",
         "ADM3_REF": "Mendez (Mendez-Nunez)",
-        "ADM3ALT1EN": "Mendez-NuÃ±ez",
+        "ADM3ALT1EN": "Mendez-Nuñez",
         "Shape_Leng": 0.158345984277,
         "Shape_Area": 0.00122916766856,
         "AREA_SQKM": 14.683838127
@@ -18709,7 +18709,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "City of BiÃ±an",
+        "ADM3_EN": "City of Biñan",
         "ADM3_PCODE": "PH0403403",
         "ADM2_EN": "Laguna",
         "ADM2_PCODE": "PH04034",
@@ -19056,7 +19056,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "Los BaÃ±os",
+        "ADM3_EN": "Los Baños",
         "ADM3_PCODE": "PH0403411",
         "ADM2_EN": "Laguna",
         "ADM2_PCODE": "PH04034",
@@ -25738,7 +25738,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "SagÃ±ay",
+        "ADM3_EN": "Sagñay",
         "ADM3_PCODE": "PH0501731",
         "ADM2_EN": "Camarines Sur",
         "ADM2_PCODE": "PH05017",
@@ -31622,7 +31622,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "DueÃ±as",
+        "ADM3_EN": "Dueñas",
         "ADM3_PCODE": "PH0603017",
         "ADM2_EN": "Iloilo",
         "ADM2_PCODE": "PH06030",
@@ -45439,7 +45439,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "Santo NiÃ±o",
+        "ADM3_EN": "Santo Niño",
         "ADM3_PCODE": "PH0806018",
         "ADM2_EN": "Samar (Western Samar)",
         "ADM2_PCODE": "PH08060",
@@ -47335,7 +47335,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "PiÃ±an (New PiÃ±an)",
+        "ADM3_EN": "Piñan (New Piñan)",
         "ADM3_PCODE": "PH0907209",
         "ADM2_EN": "Zamboanga del Norte",
         "ADM2_PCODE": "PH09072",
@@ -47347,7 +47347,7 @@
         "validOn": "2023-11-06T00:00:00.000Z",
         "validTo": "1899-11-30T00:00:00.000Z",
         "ADM3_REF": "Pinan (New Pinan)",
-        "ADM3ALT1EN": "New PiÃ±an",
+        "ADM3ALT1EN": "New Piñan",
         "Shape_Leng": 0.779739777452,
         "Shape_Area": 0.0101092659241,
         "AREA_SQKM": 123.130255338
@@ -47588,7 +47588,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "Sergio OsmeÃ±a Sr.",
+        "ADM3_EN": "Sergio Osmeña Sr.",
         "ADM3_PCODE": "PH0907214",
         "ADM2_EN": "Zamboanga del Norte",
         "ADM2_PCODE": "PH09072",
@@ -57003,7 +57003,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "Mabini (DoÃ±a Alicia)",
+        "ADM3_EN": "Mabini (Doña Alicia)",
         "ADM3_PCODE": "PH1108203",
         "ADM2_EN": "Davao de Oro (Compostela Valley)",
         "ADM2_PCODE": "PH11082",
@@ -57015,7 +57015,7 @@
         "validOn": "2023-11-06T00:00:00.000Z",
         "validTo": "1899-11-30T00:00:00.000Z",
         "ADM3_REF": "Mabini (Dona Alicia)",
-        "ADM3ALT1EN": "DoÃ±a Alicia",
+        "ADM3ALT1EN": "Doña Alicia",
         "Shape_Leng": 0.774496615156,
         "Shape_Area": 0.017571441905,
         "AREA_SQKM": 214.581316573
@@ -59296,7 +59296,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "Santo NiÃ±o",
+        "ADM3_EN": "Santo Niño",
         "ADM3_PCODE": "PH1206318",
         "ADM2_EN": "South Cotabato",
         "ADM2_PCODE": "PH12063",
@@ -60924,7 +60924,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "City of ParaÃ±aque",
+        "ADM3_EN": "City of Parañaque",
         "ADM3_PCODE": "PH1307604",
         "ADM2_EN": "Metropolitan Manila Fourth District",
         "ADM2_PCODE": "PH13076",
@@ -61750,7 +61750,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "PeÃ±arrubia",
+        "ADM3_EN": "Peñarrubia",
         "ADM3_PCODE": "PH1400117",
         "ADM2_EN": "Abra",
         "ADM2_PCODE": "PH14001",
@@ -72442,7 +72442,7 @@
         ]
       },
       "properties": {
-        "ADM3_EN": "Sofronio EspaÃ±ola",
+        "ADM3_EN": "Sofronio Española",
         "ADM3_PCODE": "PH1705324",
         "ADM2_EN": "Palawan",
         "ADM2_PCODE": "PH17053",
