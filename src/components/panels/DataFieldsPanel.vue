@@ -1,13 +1,34 @@
 <template>
   <div class="data-fields-panel">
     <div class="panel-header">
-      <n-icon :component="LayersIcon" size="18" />
-      <span>Data Fields</span>
+      <div class="panel-header-left">
+        <n-icon :component="LayersIcon" size="18" />
+        <span>Data</span>
+      </div>
+      <div class="panel-header-right">
+        <n-button-group size="small">
+          <n-button
+            size="small"
+            :type="activeTab === 'fields' ? 'primary' : 'default'"
+            @click="activeTab = 'fields'"
+          >
+            Fields
+          </n-button>
+          <n-button
+            size="small"
+            :type="activeTab === 'stats' ? 'primary' : 'default'"
+            @click="activeTab = 'stats'"
+          >
+            Stats
+          </n-button>
+        </n-button-group>
+      </div>
     </div>
     
     <div class="panel-content">
-      <!-- Pivot-style fields configuration -->
-      <div class="fields-section pivot-section">
+      <template v-if="activeTab === 'fields'">
+        <!-- Pivot-style fields configuration -->
+        <div class="fields-section pivot-section">
         <div class="section-label">Pivot Fields</div>
         
         <!-- Field list with search -->
@@ -335,13 +356,32 @@
           </div>
         </div>
       </div>
+      </template>
+      <template v-else>
+        <div class="fields-section pivot-section">
+          <div class="section-label">Stats Summary</div>
+          <div v-if="hasStatsSummary" class="stats-grid">
+            <div
+              v-for="item in statsSummary"
+              :key="item.key"
+              class="stat-item"
+            >
+              <div class="stat-label">{{ item.label }}</div>
+              <div class="stat-value">{{ item.value }}</div>
+            </div>
+          </div>
+          <div v-else class="pivot-placeholder">
+            Configure Σ Values to see summary statistics for the current filters.
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
-import { NIcon, NInput, NSelect, NCheckbox, NPopover } from 'naive-ui'
+import { ref, computed, watch, nextTick } from 'vue'
+import { NIcon, NInput, NSelect, NCheckbox, NPopover, NButton, NButtonGroup } from 'naive-ui'
 import { Layers as LayersIcon } from '@vicons/ionicons5'
 import { useDataStore } from '@/store/dataStore'
 
@@ -349,6 +389,7 @@ const dataStore = useDataStore()
 
 // Field list and pivot areas
 const fieldSearch = ref('')
+const activeTab = ref('fields') // 'fields' | 'stats'
 
 const filtersArea = ref([])
 const legendArea = ref([])
@@ -660,29 +701,154 @@ const clearLegendSelections = () => {
   dataStore.clearLegendSelections()
 }
 
-// Sync UI areas to store
-const syncAreasToStore = () => {
-  // Filters
-  dataStore.setFilterDimensions(filtersArea.value)
+// Global stats summary for current filtered data and value fields
+const statsSummary = computed(() => {
+  const rows = dataStore.filteredData || []
+  const defs = Array.isArray(dataStore.valueFields) ? dataStore.valueFields : []
+  const items = []
 
-  // Legend (single field)
-  const legendField = legendArea.value[0] || null
-  dataStore.setLegendField(legendField)
+  if (!rows.length || !defs.length) return items
 
-  // Axis
-  dataStore.setAxisFields(axisArea.value)
-
-  // Values
-  const metricSet = new Set(dataStore.availableMetrics || [])
-  const defs = valuesArea.value.map(field => {
-    const n = String(field)
-    let agg = valueAggMap.value[n]
-    if (agg !== 'avg' && agg !== 'count') {
-      agg = metricSet.has(n) ? 'sum' : 'count'
+  // Build human-readable context once, then append to each metric label.
+  let locationPart = ''
+  if (dataStore.mapFocus) {
+    if (dataStore.mapLevel === 'regions') {
+      locationPart = `in ${dataStore.mapFocus}`
+    } else if (dataStore.mapLevel === 'provinces') {
+      locationPart = `in ${dataStore.mapFocus} Province`
+    } else {
+      locationPart = `in ${dataStore.mapFocus}`
     }
-    return { field: n, agg }
+  }
+
+  let legendPart = ''
+  if (dataStore.legendField && Array.isArray(dataStore.legendSelected) && dataStore.legendSelected.length > 0) {
+    const cats = dataStore.legendSelected.map(v => String(v))
+    const display = cats.slice(0, 3)
+    let text = display.join(', ')
+    if (cats.length > 3) {
+      text += `, +${cats.length - 3} more`
+    }
+    legendPart = `${dataStore.legendField} in [${text}]`
+  }
+
+  const filterSelections = dataStore.filterSelections || {}
+  const filterConds = []
+  for (const [fieldKey, sel] of Object.entries(filterSelections)) {
+    if (!Array.isArray(sel) || sel.length === 0) continue
+    const allVals = sel.map(v => String(v))
+    const sample = allVals.slice(0, 3)
+    let text = sample.join(', ')
+    if (allVals.length > 3) {
+      text += `, +${allVals.length - 3} more`
+    }
+    filterConds.push(`${fieldKey} in [${text}]`)
+  }
+
+  let conditionsPart = ''
+  if (legendPart || filterConds.length) {
+    const conds = []
+    if (legendPart) conds.push(legendPart)
+    conds.push(...filterConds)
+    conditionsPart = conds.join('; ')
+  }
+
+  defs.forEach((def) => {
+    if (!def || !def.field) return
+    const field = def.field
+    const agg = def.agg || 'sum'
+
+    let metricLabel
+    if (agg === 'count') {
+      metricLabel = `Count of ${field}`
+    } else if (agg === 'avg') {
+      metricLabel = `Average of ${field}`
+    } else {
+      metricLabel = `Sum of ${field}`
+    }
+
+    const labelParts = [metricLabel]
+    if (locationPart) labelParts.push(locationPart)
+    if (conditionsPart) labelParts.push(`(${conditionsPart})`)
+    const label = labelParts.join(' ')
+
+    if (agg === 'count') {
+      let total = 0
+      for (const row of rows) {
+        const raw = row[field]
+        if (raw === null || raw === undefined || raw === '') continue
+        total += 1
+      }
+      const formatted = total.toLocaleString('en-US')
+      items.push({
+        key: `${field}|count`,
+        label,
+        value: formatted
+      })
+    } else {
+      let sum = 0
+      let n = 0
+      for (const row of rows) {
+        const v = parseFloat(row[field])
+        if (!isNaN(v)) {
+          sum += v
+          n += 1
+        }
+      }
+      if (n === 0) {
+        items.push({
+          key: `${field}|${agg}`,
+          label,
+          value: 'N/A'
+        })
+      } else {
+        const primary = agg === 'avg' ? (sum / n) : sum
+        const formatted = primary.toLocaleString('en-US', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        })
+        items.push({
+          key: `${field}|${agg}`,
+          label,
+          value: formatted
+        })
+      }
+    }
   })
-  dataStore.setValueFields(defs)
+
+  return items
+})
+
+const hasStatsSummary = computed(() => statsSummary.value.length > 0)
+
+// Sync UI areas to store with a single batched pivot update.
+// Wrapped in a tiny nextTick-based scheduler to avoid redundant recomputes
+// when multiple drag/drop operations happen in the same tick.
+let pivotSyncPending = false
+const syncAreasToStore = () => {
+  if (pivotSyncPending) return
+  pivotSyncPending = true
+
+  nextTick(() => {
+    pivotSyncPending = false
+
+    const metricSet = new Set(dataStore.availableMetrics || [])
+    const valueDefs = valuesArea.value.map(field => {
+      const n = String(field)
+      let agg = valueAggMap.value[n]
+      if (agg !== 'avg' && agg !== 'count') {
+        agg = metricSet.has(n) ? 'sum' : 'count'
+      }
+      return { field: n, agg }
+    })
+
+    dataStore.updatePivotConfig({
+      filters: filtersArea.value,
+      legendField: legendArea.value[0] || null,
+      axisFields: axisArea.value,
+      valueDefs
+    })
+  })
 }
 
 // Initialize areas from store
@@ -745,12 +911,23 @@ watch(
 .panel-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid #e8e8e8;
   font-weight: 600;
   font-size: 14px;
   color: #1a1a1a;
+}
+
+.panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-header-right {
+  display: flex;
+  align-items: center;
 }
 
 .panel-content {

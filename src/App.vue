@@ -69,13 +69,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, defineAsyncComponent } from 'vue'
 import { NConfigProvider } from 'naive-ui'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import FiltersPanel from '@/components/panels/FiltersPanel.vue'
 import DataFieldsPanel from '@/components/panels/DataFieldsPanel.vue'
-import MapPanel from '@/components/map/MapPanel.vue'
-import TableView from '@/components/common/TableView.vue'
+import { useDataStore } from '@/store/dataStore'
+
+const MapPanel = defineAsyncComponent(() => import('@/components/map/MapPanel.vue'))
+const TableView = defineAsyncComponent(() => import('@/components/common/TableView.vue'))
 
 const theme = ref(null) // null for light theme
 const currentView = ref('map') // 'map' or 'table'
@@ -91,8 +93,15 @@ const isResizingRight = ref(false)
 // Map panel ref
 const mapPanelRef = ref(null)
 
+// Global data store
+const dataStore = useDataStore()
+
 const handleViewChange = (view) => {
   currentView.value = view
+  // Always turn off callout labels when switching views
+  if (dataStore && typeof dataStore.setShowCalloutLabels === 'function') {
+    dataStore.setShowCalloutLabels(false)
+  }
 }
 
 // Resize handlers
@@ -216,26 +225,27 @@ body {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 8px;
   cursor: ew-resize;
   z-index: 1001;
   transition: background 0.2s;
+  background: transparent;
 }
 
 .resize-handle:hover {
-  background: #667eea;
+  background: rgba(102, 126, 234, 0.35);
 }
 
 .resize-handle:active {
-  background: #5568d3;
+  background: rgba(85, 104, 211, 0.5);
 }
 
 .left-resize {
-  right: -2px;
+  right: -4px;
 }
 
 .right-resize {
-  left: -2px;
+  left: -4px;
 }
 
 /* Panel toggle buttons */

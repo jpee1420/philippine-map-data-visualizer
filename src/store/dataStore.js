@@ -142,6 +142,31 @@ function _expandVariants(name) {
   if (noParen && noParen !== base) variants.add(noParen)
   const inner = _extractParen(base)
   if (inner) variants.add(inner)
+
+  // City naming variants: handle forms like
+  // "City of San Fernando (Capital)" <-> "San Fernando City" <-> "San Fernando"
+  const formsToCheck = new Set([base, noParen])
+  formsToCheck.forEach((form) => {
+    if (!form) return
+
+    // "City of X" -> "X", "X City"
+    if (form.startsWith('city of ')) {
+      const stem = form.slice('city of '.length).trim()
+      if (stem) {
+        variants.add(stem)
+        variants.add(`${stem} city`)
+      }
+    }
+
+    // "X City" -> "X", "City of X"
+    if (form.endsWith(' city')) {
+      const stem = form.replace(/\s+city$/, '').trim()
+      if (stem) {
+        variants.add(stem)
+        variants.add(`city of ${stem}`)
+      }
+    }
+  })
   return variants
 }
 
@@ -200,11 +225,14 @@ export const useDataStore = defineStore('dataStore', {
     selectedSubdivisions: [], // Array of selected subdivisions to show boundaries
     hideInternalBoundaries: false, // Hide internal boundaries
     showCalloutLabels: false, // Show callout diagram labels on map
+    calloutBackgroundEnabled: false, // Show background card and border for callout labels
     colorScale: {
       min: 0,
       max: 100,
       colors: ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c'] // Default to blue
-    }
+    },
+    locationRowsCache: {},
+    locationAggregatesCache: {}
   }),
   
   getters: {
@@ -249,6 +277,8 @@ export const useDataStore = defineStore('dataStore', {
       this.filterSelections = {}
       this.axisFields = []
       this.valueFields = []
+      this.locationRowsCache = {}
+      this.locationAggregatesCache = {}
 
       this.detectMetrics()
       this.applyLegendFilter()
@@ -268,6 +298,8 @@ export const useDataStore = defineStore('dataStore', {
       this.filterSelections = {}
       this.axisFields = []
       this.valueFields = []
+      this.locationRowsCache = {}
+      this.locationAggregatesCache = {}
       this.updateColorScale()
     },
     
@@ -359,6 +391,8 @@ export const useDataStore = defineStore('dataStore', {
       }
 
       this.filteredData = rows
+      this.locationRowsCache = {}
+      this.locationAggregatesCache = {}
       this._rebuildLocationIndex()
       this.updateColorScale()
     },
@@ -461,6 +495,84 @@ export const useDataStore = defineStore('dataStore', {
       this.selectedMetrics = primaryMetrics
       const first = primaryMetrics.length > 0 ? primaryMetrics[0] : null
       this.setSelectedMetric(first)
+      this.locationAggregatesCache = {}
+    },
+
+    // Batch pivot configuration updates (filters, legend, axis, values)
+    // so we only recompute filteredData once via applyLegendFilter.
+    updatePivotConfig(payload) {
+      const filters = payload && Array.isArray(payload.filters)
+        ? payload.filters.map(f => String(f))
+        : []
+      const legendField = payload && payload.legendField
+        ? String(payload.legendField)
+        : null
+      const axisFields = payload && Array.isArray(payload.axisFields)
+        ? payload.axisFields.map(f => String(f))
+        : []
+      const valueDefs = payload && Array.isArray(payload.valueDefs)
+        ? payload.valueDefs
+        : []
+
+      // Filters + filterSelections (mirror setFilterDimensions semantics)
+      const currentSelections = this.filterSelections || {}
+      const nextSelections = {}
+      const dimKeysToKeep = new Set(
+        [...filters, ...axisFields].map(f => String(f))
+      )
+      for (const [fieldKey, sel] of Object.entries(currentSelections)) {
+        if (dimKeysToKeep.has(fieldKey) && Array.isArray(sel)) {
+          nextSelections[fieldKey] = sel.slice()
+        }
+      }
+      this.filterDimensions = filters
+      this.filterSelections = nextSelections
+
+      // Legend field + categories (mirror setLegendField semantics)
+      const prevLegendField = this.legendField
+      this.legendField = legendField || null
+      if (this.legendField && this.dataset.length > 0) {
+        const categories = [...new Set(
+          this.dataset
+            .map(row => row[this.legendField])
+            .filter(v => v !== null && v !== undefined && v !== '')
+        )]
+        this.legendCategories = categories
+      } else {
+        this.legendCategories = []
+      }
+
+      if (this.legendField !== prevLegendField) {
+        // Field changed or was cleared -> clear explicit legend filters
+        this.legendSelected = null
+      }
+
+      // Axis fields
+      this.axisFields = axisFields
+
+      // Values + primary metrics (mirror setValueFields semantics, without
+      // calling setSelectedMetric to avoid extra updateColorScale calls)
+      const metricSet = new Set(this.availableMetrics || [])
+      const cleaned = valueDefs
+        .filter(d => d && typeof d.field === 'string' && d.field)
+        .map(d => ({
+          field: d.field,
+          agg: d.agg === 'avg' || d.agg === 'count' ? d.agg : 'sum'
+        }))
+
+      this.valueFields = cleaned
+
+      const primaryMetrics = []
+      for (const v of cleaned) {
+        if (metricSet.has(v.field) && v.agg !== 'count') {
+          primaryMetrics.push(v.field)
+        }
+      }
+      this.selectedMetrics = primaryMetrics
+      this.selectedMetric = primaryMetrics.length > 0 ? primaryMetrics[0] : null
+
+      // Recompute filteredData, location index and color scale once
+      this.applyLegendFilter()
     },
 
     setFilterSelectionsForField(field, values) {
@@ -519,9 +631,18 @@ export const useDataStore = defineStore('dataStore', {
     },
     
     updateColorScale() {
-      const stats = this.metricStats
-      this.colorScale.min = stats.min
-      this.colorScale.max = stats.max
+      if (this.selectedMetric) {
+        const stats = this.metricStats
+        this.colorScale.min = stats.min
+        this.colorScale.max = stats.max
+      } else if (Array.isArray(this.valueFields) && this.valueFields.some(v => v && v.agg === 'count')) {
+        const totalRows = (this.filteredData || []).length
+        this.colorScale.min = 0
+        this.colorScale.max = Math.max(1, totalRows || 0)
+      } else {
+        this.colorScale.min = 0
+        this.colorScale.max = 100
+      }
     },
     
     // Helper to find data row by location name with alias matching
@@ -603,23 +724,43 @@ export const useDataStore = defineStore('dataStore', {
     _getRowsForLocation(location) {
       if (!location) return []
       const targetNorm = _norm(location)
+      if (this.locationRowsCache && this.locationRowsCache[targetNorm]) {
+        return this.locationRowsCache[targetNorm]
+      }
       const rows = this.filteredData || []
       const results = []
+      const targetVariants = _expandVariants(location)
 
       for (const r of rows) {
         if (!r) continue
 
-        // City-level match
-        if (r.city && _norm(r.city) === targetNorm) {
-          results.push(r)
-          continue
-        }
+        let matched = false
 
-        // Province-level match
-        if (r.province && _norm(r.province) === targetNorm) {
-          results.push(r)
-          continue
+        // City-level match (variant-aware, handles "City of X" vs "X City")
+        if (r.city) {
+          const cityVars = _expandVariants(r.city)
+          for (const v of cityVars) {
+            if (targetVariants.has(v)) {
+              results.push(r)
+              matched = true
+              break
+            }
+          }
         }
+        if (matched) continue
+
+        // Province-level match (variant-aware)
+        if (r.province) {
+          const provVars = _expandVariants(r.province)
+          for (const v of provVars) {
+            if (targetVariants.has(v)) {
+              results.push(r)
+              matched = true
+              break
+            }
+          }
+        }
+        if (matched) continue
 
         // Region-level match (uses alias-aware matcher)
         if (_isRegionMatch(r.region, location)) {
@@ -627,6 +768,8 @@ export const useDataStore = defineStore('dataStore', {
         }
       }
 
+      if (!this.locationRowsCache) this.locationRowsCache = {}
+      this.locationRowsCache[targetNorm] = results
       return results
     },
 
@@ -635,6 +778,12 @@ export const useDataStore = defineStore('dataStore', {
     // For numeric fields (sum/avg), returns sum, avg and row count.
     getLocationAggregates(location) {
       if (!location) return null
+
+      const cacheKey = _norm(location)
+      const cache = this.locationAggregatesCache || {}
+      if (Object.prototype.hasOwnProperty.call(cache, cacheKey)) {
+        return cache[cacheKey]
+      }
 
       const rows = this._getRowsForLocation(location)
       if (!rows || rows.length === 0) return null
@@ -684,10 +833,14 @@ export const useDataStore = defineStore('dataStore', {
 
       if (summaries.length === 0) return null
 
-      return {
+      const result = {
         rowCount: rows.length,
         valueSummaries: summaries
       }
+
+      if (!this.locationAggregatesCache) this.locationAggregatesCache = {}
+      this.locationAggregatesCache[cacheKey] = result
+      return result
     },
     
     setMapLevel(level) {
@@ -711,6 +864,10 @@ export const useDataStore = defineStore('dataStore', {
     
     setShowCalloutLabels(show) {
       this.showCalloutLabels = show
+    },
+
+    setCalloutBackgroundEnabled(show) {
+      this.calloutBackgroundEnabled = !!show
     }
   }
 })
