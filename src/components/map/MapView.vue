@@ -773,7 +773,7 @@ function renderCalloutLabels() {
     const markerRadius = 4
     const lineWeight = 1
     const fontSize = 1
-    const labelWidth = 100
+    const labelWidth = 120
     const labelHeight = 50
     
     // Create marker at actual location center
@@ -1410,6 +1410,18 @@ watch(() => map.value, (newMap) => {
 
 .callout-metrics {
   margin-top: 1px;
+}
+
+.callout-field-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #111827;
+  margin-top: 2px;
+}
+
+.callout-field-divider {
+  border-top: 1px solid #b3b7bf;
+  margin: 4px 0;
 }
 
 .resize-handle {

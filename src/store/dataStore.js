@@ -109,9 +109,15 @@ function normalizeDatasetColumns(data) {
   // Return new dataset with canonical fields added if missing
   return data.map(row => {
     const newRow = { ...row }
-    if (keyMap.region !== undefined && newRow.region === undefined) newRow.region = row[keyMap.region]
-    if (keyMap.province !== undefined && newRow.province === undefined) newRow.province = row[keyMap.province]
-    if (keyMap.city !== undefined && newRow.city === undefined) newRow.city = row[keyMap.city]
+    if (keyMap.region !== undefined && newRow.region === undefined) {
+      newRow.region = row[keyMap.region]
+    }
+    if (keyMap.province !== undefined && newRow.province === undefined) {
+      newRow.province = row[keyMap.province]
+    }
+    if (keyMap.city !== undefined && newRow.city === undefined) {
+      newRow.city = row[keyMap.city]
+    }
     return newRow
   })
 }

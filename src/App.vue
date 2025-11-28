@@ -62,7 +62,7 @@
       
       <!-- Footer -->
       <div class="app-footer">
-        <span><strong>Picar Corporation</strong></span>
+        <!-- <span><strong>Picar Corporation</strong></span> -->
       </div>
     </div>
   </n-config-provider>

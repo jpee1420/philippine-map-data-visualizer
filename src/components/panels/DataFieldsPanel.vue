@@ -362,12 +362,30 @@
           <div class="section-label">Stats Summary</div>
           <div v-if="hasStatsSummary" class="stats-grid">
             <div
-              v-for="item in statsSummary"
-              :key="item.key"
+              v-for="card in statsSummary"
+              :key="card.key"
               class="stat-item"
             >
-              <div class="stat-label">{{ item.label }}</div>
-              <div class="stat-value">{{ item.value }}</div>
+              <div class="stat-label">{{ card.title }}</div>
+              <div
+                v-if="card.main"
+                class="stat-value"
+              >
+                {{ card.main }}
+              </div>
+              <div
+                v-if="card.lines && card.lines.length"
+                class="stat-lines"
+              >
+                <div
+                  v-for="line in card.lines"
+                  :key="line.key"
+                  class="stat-line"
+                >
+                  <span class="stat-line-label">{{ line.label }}</span>
+                  <span class="stat-line-value">{{ line.value }}</span>
+                </div>
+              </div>
             </div>
           </div>
           <div v-else class="pivot-placeholder">
@@ -409,8 +427,23 @@ const allFieldDefs = computed(() => {
   if (!dataStore.dataset || dataStore.dataset.length === 0) return []
   const sample = dataStore.dataset[0]
   const keys = Object.keys(sample)
+
+  const normalizeKey = (raw) => String(raw || '').toLowerCase().replace(/[^a-z]/g, '')
+
+  const hasRegionAlias = keys.some(k => k !== 'region' && normalizeKey(k) === 'region')
+  const hasProvinceAlias = keys.some(k => k !== 'province' && normalizeKey(k) === 'province')
+  const hasCityAlias = keys.some(k => k !== 'city' && normalizeKey(k) === 'city')
+
+  const visibleKeys = keys.filter(k => {
+    const nk = normalizeKey(k)
+    if (k === 'region' && nk === 'region' && hasRegionAlias) return false
+    if (k === 'province' && nk === 'province' && hasProvinceAlias) return false
+    if (k === 'city' && nk === 'city' && hasCityAlias) return false
+    return true
+  })
+
   const metricSet = new Set(dataStore.availableMetrics || [])
-  return keys.map(name => ({
+  return visibleKeys.map(name => ({
     name,
     isMetric: metricSet.has(name)
   }))
@@ -701,89 +734,78 @@ const clearLegendSelections = () => {
   dataStore.clearLegendSelections()
 }
 
-// Global stats summary for current filtered data and value fields
+// Global stats summary for current filtered data and value fields,
+// mirroring the aggregation semantics used by callout labels.
 const statsSummary = computed(() => {
   const rows = dataStore.filteredData || []
   const defs = Array.isArray(dataStore.valueFields) ? dataStore.valueFields : []
-  const items = []
+  const cards = []
 
-  if (!rows.length || !defs.length) return items
+  if (!rows.length || !defs.length) return cards
 
-  // Build human-readable context once, then append to each metric label.
-  let locationPart = ''
-  if (dataStore.mapFocus) {
-    if (dataStore.mapLevel === 'regions') {
-      locationPart = `in ${dataStore.mapFocus}`
-    } else if (dataStore.mapLevel === 'provinces') {
-      locationPart = `in ${dataStore.mapFocus} Province`
-    } else {
-      locationPart = `in ${dataStore.mapFocus}`
-    }
-  }
-
-  let legendPart = ''
-  if (dataStore.legendField && Array.isArray(dataStore.legendSelected) && dataStore.legendSelected.length > 0) {
-    const cats = dataStore.legendSelected.map(v => String(v))
-    const display = cats.slice(0, 3)
-    let text = display.join(', ')
-    if (cats.length > 3) {
-      text += `, +${cats.length - 3} more`
-    }
-    legendPart = `${dataStore.legendField} in [${text}]`
-  }
-
-  const filterSelections = dataStore.filterSelections || {}
-  const filterConds = []
-  for (const [fieldKey, sel] of Object.entries(filterSelections)) {
-    if (!Array.isArray(sel) || sel.length === 0) continue
-    const allVals = sel.map(v => String(v))
-    const sample = allVals.slice(0, 3)
-    let text = sample.join(', ')
-    if (allVals.length > 3) {
-      text += `, +${allVals.length - 3} more`
-    }
-    filterConds.push(`${fieldKey} in [${text}]`)
-  }
-
-  let conditionsPart = ''
-  if (legendPart || filterConds.length) {
-    const conds = []
-    if (legendPart) conds.push(legendPart)
-    conds.push(...filterConds)
-    conditionsPart = conds.join('; ')
-  }
+  const rowCount = rows.length
 
   defs.forEach((def) => {
     if (!def || !def.field) return
     const field = def.field
     const agg = def.agg || 'sum'
-
-    let metricLabel
-    if (agg === 'count') {
-      metricLabel = `Count of ${field}`
-    } else if (agg === 'avg') {
-      metricLabel = `Average of ${field}`
-    } else {
-      metricLabel = `Sum of ${field}`
-    }
-
-    const labelParts = [metricLabel]
-    if (locationPart) labelParts.push(locationPart)
-    if (conditionsPart) labelParts.push(`(${conditionsPart})`)
-    const label = labelParts.join(' ')
+    const keyBase = String(field)
 
     if (agg === 'count') {
+      const counts = {}
       let total = 0
       for (const row of rows) {
         const raw = row[field]
         if (raw === null || raw === undefined || raw === '') continue
+        const val = String(raw)
+        counts[val] = (counts[val] || 0) + 1
         total += 1
       }
-      const formatted = total.toLocaleString('en-US')
-      items.push({
-        key: `${field}|count`,
-        label,
-        value: formatted
+
+      if (total === 0) {
+        cards.push({
+          key: `${keyBase}|count`,
+          title: field,
+          main: 'No values',
+          lines: []
+        })
+        return
+      }
+
+      const totalText = total.toLocaleString('en-US')
+      let totalPctText = ''
+      if (rowCount > 0) {
+        const pct = (total / rowCount) * 100
+        totalPctText = ` (${pct.toFixed(0)}%)`
+      }
+
+      const lines = []
+      const entries = Object.entries(counts)
+      entries.sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+      entries.forEach(([val, count]) => {
+        const countNum = typeof count === 'number' ? count : Number(count)
+        const countText = !isNaN(countNum)
+          ? countNum.toLocaleString('en-US')
+          : String(count)
+
+        let pctTextLocal = ''
+        if (total > 0 && !isNaN(countNum)) {
+          const pct = (countNum / total) * 100
+          pctTextLocal = ` (${pct.toFixed(0)}%)`
+        }
+
+        lines.push({
+          key: `${keyBase}|${val}`,
+          label: val,
+          value: `${countText}${pctTextLocal}`
+        })
+      })
+
+      cards.push({
+        key: `${keyBase}|count`,
+        title: field,
+        main: `${totalText}${totalPctText}`,
+        lines
       })
     } else {
       let sum = 0
@@ -795,28 +817,43 @@ const statsSummary = computed(() => {
           n += 1
         }
       }
+
       if (n === 0) {
-        items.push({
-          key: `${field}|${agg}`,
-          label,
-          value: 'N/A'
+        cards.push({
+          key: `${keyBase}|${agg}`,
+          title: field,
+          main: 'N/A',
+          lines: []
         })
-      } else {
-        const primary = agg === 'avg' ? (sum / n) : sum
-        const formatted = primary.toLocaleString('en-US', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2
-        })
-        items.push({
-          key: `${field}|${agg}`,
-          label,
-          value: formatted
-        })
+        return
       }
+
+      const primary = agg === 'avg' ? (sum / n) : sum
+      const primaryText = primary.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })
+      const aggLabel = agg === 'avg' ? 'Average' : 'Sum'
+      const main = `${aggLabel} ${primaryText}`
+
+      const lines = [
+        {
+          key: `${keyBase}|n`,
+          label: 'n',
+          value: n.toLocaleString('en-US')
+        }
+      ]
+
+      cards.push({
+        key: `${keyBase}|${agg}`,
+        title: field,
+        main,
+        lines
+      })
     }
   })
 
-  return items
+  return cards
 })
 
 const hasStatsSummary = computed(() => statsSummary.value.length > 0)
@@ -1229,6 +1266,28 @@ watch(
   font-size: 18px;
   font-weight: 600;
   color: #1a1a1a;
+}
+
+.stat-lines {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #444;
+}
+
+.stat-line-label {
+  color: #666;
+}
+
+.stat-line-value {
+  font-weight: 500;
 }
 
 /* Custom scrollbar */

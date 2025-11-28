@@ -43,13 +43,32 @@ import { useDataStore } from '@/store/dataStore'
 const dataStore = useDataStore()
 const searchQuery = ref('')
 
-const columns = computed(() => {
+const normalizeKey = (raw) => String(raw || '').toLowerCase().replace(/[^a-z]/g, '')
+
+const displayColumnKeys = computed(() => {
   if (dataStore.dataset.length === 0) return []
-  
-  const firstRow = dataStore.dataset[0]
-  return Object.keys(firstRow).map(key => ({
+
+  const sample = dataStore.dataset[0]
+  const keys = Object.keys(sample)
+
+  const hasRegionAlias = keys.some(k => k !== 'region' && normalizeKey(k) === 'region')
+  const hasProvinceAlias = keys.some(k => k !== 'province' && normalizeKey(k) === 'province')
+  const hasCityAlias = keys.some(k => k !== 'city' && normalizeKey(k) === 'city')
+
+  return keys.filter(k => {
+    const nk = normalizeKey(k)
+    if (k === 'region' && nk === 'region' && hasRegionAlias) return false
+    if (k === 'province' && nk === 'province' && hasProvinceAlias) return false
+    if (k === 'city' && nk === 'city' && hasCityAlias) return false
+    return true
+  })
+})
+
+const columns = computed(() => {
+  const keys = displayColumnKeys.value
+  return keys.map(key => ({
     title: key,
-    key: key,
+    key,
     sorter: 'default'
   }))
 })
