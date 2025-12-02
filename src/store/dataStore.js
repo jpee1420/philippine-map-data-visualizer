@@ -84,10 +84,22 @@ const HEADER_ALIASES = {
   region: new Set(['region', 'regionname', 'reg']),
   province: new Set(['province', 'provincename', 'prov']),
   city: new Set([
-    'city', 'cityname', 'municipality', 'municipal', 'municipalname',
-    'cities', 'municipalities', 'citymunicipality', 'citiesmunicipalities',
-    'citymunicipalityname', 'citiesandmunicipalities', 'cityandmunicipality',
-    'citymunicipal', 'mun', 'municity'
+    'city',
+    'cityname',
+    'municipality',
+    'municipal',
+    'municipalname',
+    'municipalitycity', // e.g. "MUNICIPALITY/CITY" from Google Sheets
+    'cities',
+    'municipalities',
+    'citymunicipality',
+    'citiesmunicipalities',
+    'citymunicipalityname',
+    'citiesandmunicipalities',
+    'cityandmunicipality',
+    'citymunicipal',
+    'mun',
+    'municity'
   ])
 }
 
@@ -218,13 +230,9 @@ export const useDataStore = defineStore('dataStore', {
     geoData: null,
     selectedMetric: null,
     selectedMetrics: [], // Array of selected metrics for multi-metric display
-    legendField: null, // Categorical field for legend (e.g., gender, nationality)
-    legendCategories: [], // Unique categories from legend field
-    legendSelected: null, // null = all categories selected (no filter), [] or array = explicit selection
     filterDimensions: [],
     filterSelections: {},
     availableMetrics: [],
-    axisFields: [], // Order of axis/category fields for grouping and labels
     valueFields: [], // [{ field, agg }] for metrics and counts
     mapLevel: 'country', // 'country', 'regions', or 'provinces'
     mapFocus: null, // Specific location to focus on (e.g., "Ilocos Region")
@@ -276,12 +284,8 @@ export const useDataStore = defineStore('dataStore', {
       this.availableMetrics = []
       this.selectedMetric = null
       this.selectedMetrics = []
-      this.legendField = null
-      this.legendCategories = []
-      this.legendSelected = null
       this.filterDimensions = []
       this.filterSelections = {}
-      this.axisFields = []
       this.valueFields = []
       this.locationRowsCache = {}
       this.locationAggregatesCache = {}
@@ -297,12 +301,8 @@ export const useDataStore = defineStore('dataStore', {
       this.availableMetrics = []
       this.selectedMetric = null
       this.selectedMetrics = []
-      this.legendField = null
-      this.legendCategories = []
-      this.legendSelected = []
       this.filterDimensions = []
       this.filterSelections = {}
-      this.axisFields = []
       this.valueFields = []
       this.locationRowsCache = {}
       this.locationAggregatesCache = {}
@@ -352,13 +352,10 @@ export const useDataStore = defineStore('dataStore', {
         }
       }
 
-      const filterDimsRaw = [
-        ...(Array.isArray(this.filterDimensions) ? this.filterDimensions : []),
-        ...(Array.isArray(this.axisFields) ? this.axisFields : [])
-      ]
+      const filterDims = Array.isArray(this.filterDimensions) ? this.filterDimensions : []
 
-      if (filterDimsRaw.length > 0) {
-        const dims = Array.from(new Set(filterDimsRaw.map(f => String(f))))
+      if (filterDims.length > 0) {
+        const dims = Array.from(new Set(filterDims.map(f => String(f))))
         const selections = this.filterSelections || {}
 
         const selectionSets = {}
@@ -386,16 +383,6 @@ export const useDataStore = defineStore('dataStore', {
         })
       }
 
-      if (this.legendField && Array.isArray(this.legendSelected)) {
-        if (this.legendSelected.length === 0) {
-          // Explicit "no categories" selection -> nothing passes the legend filter
-          rows = []
-        } else {
-          const selectedSet = new Set(this.legendSelected.map(v => String(v)))
-          rows = rows.filter(row => selectedSet.has(String(row[this.legendField])))
-        }
-      }
-
       this.filteredData = rows
       this.locationRowsCache = {}
       this.locationAggregatesCache = {}
@@ -403,64 +390,6 @@ export const useDataStore = defineStore('dataStore', {
       this.updateColorScale()
     },
     
-    setLegendSelections(values) {
-      if (values === null) {
-        // null = no explicit filter (all categories selected)
-        this.legendSelected = null
-      } else if (Array.isArray(values)) {
-        this.legendSelected = values
-      } else {
-        this.legendSelected = null
-      }
-      this.applyLegendFilter()
-    },
-    
-    toggleLegendSelection(value) {
-      const val = String(value)
-      const all = (this.legendCategories || []).map(v => String(v))
-      const currentArray = Array.isArray(this.legendSelected)
-        ? this.legendSelected.map(v => String(v))
-        : all.slice()
-
-      const set = new Set(currentArray)
-      if (set.has(val)) {
-        set.delete(val)
-      } else {
-        set.add(val)
-      }
-
-      const next = Array.from(set)
-      if (next.length === all.length) {
-        this.legendSelected = null
-      } else {
-        this.legendSelected = next
-      }
-      this.applyLegendFilter()
-    },
-    
-    clearLegendSelections() {
-      // Reset to all categories selected (no explicit filter list)
-      this.legendSelected = null
-      this.applyLegendFilter()
-    },
-
-    setLegendField(field) {
-      this.legendField = field || null
-      // Reset legend filter when field changes: null means no explicit filter (all categories)
-      this.legendSelected = null
-      if (field && this.dataset.length > 0) {
-        const categories = [...new Set(
-          this.dataset
-            .map(row => row[field])
-            .filter(v => v !== null && v !== undefined && v !== '')
-        )]
-        this.legendCategories = categories
-      } else {
-        this.legendCategories = []
-      }
-      this.applyLegendFilter()
-    },
-
     setFilterDimensions(fields) {
       const nextFields = Array.isArray(fields) ? fields : []
       const nextSelections = {}
@@ -474,10 +403,6 @@ export const useDataStore = defineStore('dataStore', {
       this.filterDimensions = nextFields
       this.filterSelections = nextSelections
       this.applyLegendFilter()
-    },
-
-    setAxisFields(fields) {
-      this.axisFields = Array.isArray(fields) ? fields.slice() : []
     },
 
     setValueFields(defs) {
@@ -504,17 +429,11 @@ export const useDataStore = defineStore('dataStore', {
       this.locationAggregatesCache = {}
     },
 
-    // Batch pivot configuration updates (filters, legend, axis, values)
+    // Batch pivot configuration updates (filters, values)
     // so we only recompute filteredData once via applyLegendFilter.
     updatePivotConfig(payload) {
       const filters = payload && Array.isArray(payload.filters)
         ? payload.filters.map(f => String(f))
-        : []
-      const legendField = payload && payload.legendField
-        ? String(payload.legendField)
-        : null
-      const axisFields = payload && Array.isArray(payload.axisFields)
-        ? payload.axisFields.map(f => String(f))
         : []
       const valueDefs = payload && Array.isArray(payload.valueDefs)
         ? payload.valueDefs
@@ -523,9 +442,7 @@ export const useDataStore = defineStore('dataStore', {
       // Filters + filterSelections (mirror setFilterDimensions semantics)
       const currentSelections = this.filterSelections || {}
       const nextSelections = {}
-      const dimKeysToKeep = new Set(
-        [...filters, ...axisFields].map(f => String(f))
-      )
+      const dimKeysToKeep = new Set(filters.map(f => String(f)))
       for (const [fieldKey, sel] of Object.entries(currentSelections)) {
         if (dimKeysToKeep.has(fieldKey) && Array.isArray(sel)) {
           nextSelections[fieldKey] = sel.slice()
@@ -533,28 +450,6 @@ export const useDataStore = defineStore('dataStore', {
       }
       this.filterDimensions = filters
       this.filterSelections = nextSelections
-
-      // Legend field + categories (mirror setLegendField semantics)
-      const prevLegendField = this.legendField
-      this.legendField = legendField || null
-      if (this.legendField && this.dataset.length > 0) {
-        const categories = [...new Set(
-          this.dataset
-            .map(row => row[this.legendField])
-            .filter(v => v !== null && v !== undefined && v !== '')
-        )]
-        this.legendCategories = categories
-      } else {
-        this.legendCategories = []
-      }
-
-      if (this.legendField !== prevLegendField) {
-        // Field changed or was cleared -> clear explicit legend filters
-        this.legendSelected = null
-      }
-
-      // Axis fields
-      this.axisFields = axisFields
 
       // Values + primary metrics (mirror setValueFields semantics, without
       // calling setSelectedMetric to avoid extra updateColorScale calls)
@@ -698,12 +593,18 @@ export const useDataStore = defineStore('dataStore', {
     },
     
     getColorForValue(value) {
-      // No metric -> render polygon with white fill; borders are handled in MapView
-      if (value === null || value === undefined) return '#ffffff'
+      // No data or invalid value -> render polygon with white fill
+      if (value === null || value === undefined || isNaN(value)) return '#ffffff'
       
       const { min, max, colors } = this.colorScale
-      const normalized = (value - min) / (max - min || 1)
-      const index = Math.floor(normalized * (colors.length - 1))
+      
+      // If min equals max (single value), return first color
+      if (min === max) return colors[0]
+      
+      const normalized = (value - min) / (max - min)
+      // Clamp normalized value between 0 and 1
+      const clamped = Math.max(0, Math.min(1, normalized))
+      const index = Math.floor(clamped * (colors.length - 1))
       
       return colors[Math.max(0, Math.min(colors.length - 1, index))]
     },

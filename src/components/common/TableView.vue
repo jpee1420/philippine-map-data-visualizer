@@ -51,15 +51,36 @@ const displayColumnKeys = computed(() => {
   const sample = dataStore.dataset[0]
   const keys = Object.keys(sample)
 
-  const hasRegionAlias = keys.some(k => k !== 'region' && normalizeKey(k) === 'region')
-  const hasProvinceAlias = keys.some(k => k !== 'province' && normalizeKey(k) === 'province')
-  const hasCityAlias = keys.some(k => k !== 'city' && normalizeKey(k) === 'city')
+  const regionAliasKeys = new Set(['region', 'regionname', 'reg'])
+  const provinceAliasKeys = new Set(['province', 'provincename', 'prov'])
+  const cityAliasKeys = new Set([
+    'city',
+    'cityname',
+    'municipality',
+    'municipal',
+    'municipalname',
+    'municipalitycity',
+    'cities',
+    'municipalities',
+    'citymunicipality',
+    'citiesmunicipalities',
+    'citymunicipalityname',
+    'citiesandmunicipalities',
+    'cityandmunicipality',
+    'citymunicipal',
+    'mun',
+    'municity'
+  ])
+
+  const hasRegionAlias = keys.some(k => k !== 'region' && regionAliasKeys.has(normalizeKey(k)))
+  const hasProvinceAlias = keys.some(k => k !== 'province' && provinceAliasKeys.has(normalizeKey(k)))
+  const hasCityAlias = keys.some(k => k !== 'city' && cityAliasKeys.has(normalizeKey(k)))
 
   return keys.filter(k => {
     const nk = normalizeKey(k)
-    if (k === 'region' && nk === 'region' && hasRegionAlias) return false
-    if (k === 'province' && nk === 'province' && hasProvinceAlias) return false
-    if (k === 'city' && nk === 'city' && hasCityAlias) return false
+    if (k === 'region' && hasRegionAlias && regionAliasKeys.has(nk)) return false
+    if (k === 'province' && hasProvinceAlias && provinceAliasKeys.has(nk)) return false
+    if (k === 'city' && hasCityAlias && cityAliasKeys.has(nk)) return false
     return true
   })
 })

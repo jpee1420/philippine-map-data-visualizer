@@ -2,8 +2,18 @@
   <div class="map-container">
     <div ref="mapElement" id="map" class="map"></div>
     <div class="map-options-overlay">
-      <div class="map-options-card">
-        <div class="map-options-row">
+      <div class="map-options-card" :class="{ 'is-collapsed': optionsCollapsed }">
+        <div class="map-options-header">
+          <span class="map-options-title">Map Options</span>
+          <button
+            type="button"
+            class="map-options-toggle"
+            @click="optionsCollapsed = !optionsCollapsed"
+          >
+            {{ optionsCollapsed ? 'Show' : 'Hide' }}
+          </button>
+        </div>
+        <div v-if="!optionsCollapsed" class="map-options-row">
           <span class="map-options-label">Color Scale</span>
           <n-select
             v-model:value="colorScheme"
@@ -11,14 +21,14 @@
             size="tiny"
           />
         </div>
-        <div class="map-options-row">
+        <div v-if="!optionsCollapsed" class="map-options-row">
           <span class="map-options-label">Callout Labels</span>
           <n-switch
             v-model:value="showCallouts"
             size="small"
           />
         </div>
-        <div class="map-options-row">
+        <div v-if="!optionsCollapsed" class="map-options-row">
           <span class="map-options-label">Callout Background</span>
           <n-switch
             v-model:value="calloutBackground"
@@ -56,6 +66,7 @@ const calloutLayer = ref(null)
 const loading = ref(false)
 const colorScheme = ref('blue')
 const calloutPositions = ref({})
+const optionsCollapsed = ref(false)
 
 const colorSchemeOptions = [
   { label: 'Blue', value: 'blue' },
@@ -405,58 +416,43 @@ function renderGeoJSON(geoData) {
       const locationName = getLocationName(feature)
       let fillColor
       
-      // If legend field is set, color by category
-      if (dataStore.legendField && dataStore.legendCategories.length > 0) {
-        let row = dataStore.findRowByLocation(locationName)
-        if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
-          row = dataStore.findRowByLocation(dataStore.mapFocus)
-        }
-        // No data for this location after filters -> neutral fill
-        if (!row) {
-          fillColor = '#ffffff'
-        } else {
-          const selectionActive = Array.isArray(dataStore.legendSelected) && dataStore.legendSelected.length > 0
-          const selSet = selectionActive ? new Set(dataStore.legendSelected.map(String)) : null
-          const categoryValue = row[dataStore.legendField]
-          const inSelection = !selectionActive || (categoryValue != null && selSet.has(String(categoryValue)))
-          if (!inSelection) {
-            fillColor = '#cccccc'
-          } else {
-            const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
-            fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
-          }
-        }
-      } else {
-        // Otherwise, color by numeric metric or count-based value
-        let value = null
+      // Color by numeric metric or count-based value
+      let value = null
 
-        if (dataStore.selectedMetric) {
-          value = dataStore.getValueForLocation(locationName)
-          // If no value for subdivision while in region view, use region value
-          if ((value === null || isNaN(value)) && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
-            value = dataStore.getValueForLocation(dataStore.mapFocus)
-          }
-        } else if (Array.isArray(dataStore.valueFields) && dataStore.valueFields.some(v => v && v.agg === 'count')) {
-          const aggregates =
-            typeof dataStore.getLocationAggregates === 'function'
-              ? dataStore.getLocationAggregates(locationName)
-              : null
-          if (aggregates && aggregates.valueSummaries && aggregates.valueSummaries.length > 0) {
-            const countSummary = aggregates.valueSummaries.find(s => s && s.agg === 'count')
-            if (countSummary && typeof countSummary.total === 'number') {
-              value = countSummary.total
-            } else if (typeof aggregates.rowCount === 'number') {
-              value = aggregates.rowCount
+      if (dataStore.selectedMetric) {
+        value = dataStore.getValueForLocation(locationName)
+        // If no value for subdivision while in region view, use region value
+        if ((value === null || isNaN(value)) && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+          value = dataStore.getValueForLocation(dataStore.mapFocus)
+        }
+      } else if (Array.isArray(dataStore.valueFields) && dataStore.valueFields.length > 0) {
+        const aggregates =
+          typeof dataStore.getLocationAggregates === 'function'
+            ? dataStore.getLocationAggregates(locationName)
+            : null
+        if (aggregates && aggregates.valueSummaries && aggregates.valueSummaries.length > 0) {
+          const countSummary = aggregates.valueSummaries.find(s => s && s.agg === 'count')
+          if (countSummary && typeof countSummary.total === 'number') {
+            value = countSummary.total
+          } else {
+            // Try sum or avg from numeric summaries
+            const numericSummary = aggregates.valueSummaries.find(s => s && s.agg !== 'count')
+            if (numericSummary) {
+              value = numericSummary.agg === 'avg' ? numericSummary.avg : numericSummary.sum
             }
           }
         }
-
-        // No data for this location after filters -> neutral fill
-        if (value === null || isNaN(value)) {
-          fillColor = '#ffffff'
-        } else {
-          fillColor = dataStore.getColorForValue(value)
+        // Fallback to row count if no specific summary
+        if ((value === null || isNaN(value)) && aggregates && typeof aggregates.rowCount === 'number') {
+          value = aggregates.rowCount
         }
+      }
+
+      // No data for this location after filters -> white fill
+      if (value === null || isNaN(value) || value === 0) {
+        fillColor = '#ffffff'
+      } else {
+        fillColor = dataStore.getColorForValue(value)
       }
       
       // Hide internal boundaries if option is enabled
@@ -664,8 +660,15 @@ function renderCalloutLabels() {
 
     // In regions view with checked provinces/cities, skip the parent region feature
     if (hasRegionSubdivisions) {
-      const code = String(props.ADM2_PCODE || props.ADM3_PCODE || '')
-      if (!code || !selectedSubdivisionSet.has(code)) {
+      // For NCR, subdivisions are ADM3 (cities/municipalities), so check ADM3_PCODE first
+      // For other regions, subdivisions are ADM2 (provinces)
+      const adm3Code = props.ADM3_PCODE ? String(props.ADM3_PCODE) : ''
+      const adm2Code = props.ADM2_PCODE ? String(props.ADM2_PCODE) : ''
+      const code = adm3Code || adm2Code
+      // Check if either code is in the selected set (handles both NCR ADM3 and regular ADM2)
+      const isSelected = (adm3Code && selectedSubdivisionSet.has(adm3Code)) || 
+                         (adm2Code && selectedSubdivisionSet.has(adm2Code))
+      if (!code || !isSelected) {
         return
       }
     }
@@ -710,12 +713,16 @@ function renderCalloutLabels() {
           value = aggregates.rowCount
         }
       }
+    } else if (aggregates && typeof aggregates.rowCount === 'number' && aggregates.rowCount > 0) {
+      // Fallback: use row count if aggregates exist but no valueSummaries
+      value = aggregates.rowCount
     } else if (dataStore.selectedMetric) {
       // Fallback: use the map's primary numeric metric if no aggregates are available
       value = dataStore.getValueForLocation(locationName)
     }
 
-    if (value !== null && !isNaN(value)) {
+    // Show callout if we have any value, including 0 for locations with rows but no counts
+    if (value !== null && !isNaN(value) && value > 0) {
       // Calculate center from feature's geometry bounds
       const center = getFeatureCenter(feature)
       locationData.push({ name: locationName, value, center, feature, aggregates })
@@ -752,7 +759,7 @@ function renderCalloutLabels() {
   // Get current zoom level (used for label positioning; size is manually resizable)
   const zoom = map.value.getZoom()
   
-  // Calculate label positions to avoid overlaps
+  // Calculate label positions to avoid overlaps and stay within map bounds
   const positions = calculateLabelPositions(topLocations, zoom)
   
   // Create callout labels for each location
@@ -887,54 +894,84 @@ function refreshConnectorLines() {
   })
 }
 
-// Helper function to calculate label positions to avoid overlaps
+// Helper function to calculate label positions to avoid overlaps and stay within map bounds
 function calculateLabelPositions(locations, zoom) {
   const positions = []
   const mapBounds = map.value.getBounds()
+  const north = mapBounds.getNorth()
+  const south = mapBounds.getSouth()
+  const east = mapBounds.getEast()
+  const west = mapBounds.getWest()
   
-  // Use the center of the visible features as reference point
-  // If there's a single focused location, use its bounds
-  let referenceCenter
-  if (locations.length === 1 && locations[0].feature) {
-    // For single focused location, use the feature's bounds
-    const featureBounds = L.geoJSON(locations[0].feature).getBounds()
-    referenceCenter = featureBounds.getCenter()
-  } else {
-    // For multiple locations, use map center
-    referenceCenter = map.value.getCenter()
+  // Calculate map dimensions
+  const latSpan = Math.abs(north - south)
+  const lngSpan = Math.abs(east - west)
+  
+  // Smaller offsets to keep callouts closer to their locations
+  const baseOffset = Math.min(latSpan, lngSpan) * 0.08
+  
+  // Padding from map edges (as percentage of span)
+  const padLat = latSpan * 0.05
+  const padLng = lngSpan * 0.05
+  
+  // Safe bounds for callout positions
+  const safeBounds = {
+    north: north - padLat,
+    south: south + padLat,
+    east: east - padLng,
+    west: west + padLng
   }
   
-  // Base offset distance (scales with zoom)
-  const latSpan = Math.abs(mapBounds.getNorth() - mapBounds.getSouth())
-  const lngSpan = Math.abs(mapBounds.getEast() - mapBounds.getWest())
-  const baseLatOffset = latSpan * 0.18 || 0.5
-  const baseLngOffset = lngSpan * 0.18 || 0.5
+  // Track used positions to avoid overlaps
+  const usedPositions = []
+  const minDistance = Math.min(latSpan, lngSpan) * 0.12 // Minimum distance between callouts
+  
+  // Distribute callouts in a circular pattern around their centers
+  const angleStep = (2 * Math.PI) / Math.max(locations.length, 8)
+  const startAngle = -Math.PI / 4 // Start from top-right
   
   locations.forEach((location, index) => {
     const center = location.center
     
-    // Calculate offset direction based on position relative to reference center
-    let offsetLat = 0
-    let offsetLng = baseLngOffset
+    // Calculate position using radial distribution
+    let bestPos = null
+    let bestDistance = -1
     
-    // Position labels around the location based on its position
-    if (center[0] > referenceCenter.lat) {
-      offsetLat = baseLatOffset // North
-    } else {
-      offsetLat = -baseLatOffset // South
+    // Try multiple angles to find a non-overlapping position
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const angle = startAngle + (index * angleStep) + (attempt * Math.PI / 4)
+      const offsetLat = Math.sin(angle) * baseOffset * (1 + attempt * 0.3)
+      const offsetLng = Math.cos(angle) * baseOffset * (1 + attempt * 0.3)
+      
+      let lat = center[0] + offsetLat
+      let lng = center[1] + offsetLng
+      
+      // Constrain to safe bounds
+      lat = Math.max(safeBounds.south, Math.min(safeBounds.north, lat))
+      lng = Math.max(safeBounds.west, Math.min(safeBounds.east, lng))
+      
+      // Check distance from existing positions
+      let minDistFromOthers = Infinity
+      for (const used of usedPositions) {
+        const dist = Math.sqrt(Math.pow(lat - used[0], 2) + Math.pow(lng - used[1], 2))
+        minDistFromOthers = Math.min(minDistFromOthers, dist)
+      }
+      
+      if (minDistFromOthers > bestDistance) {
+        bestDistance = minDistFromOthers
+        bestPos = [lat, lng]
+        
+        // If we found a position with enough separation, use it
+        if (minDistFromOthers >= minDistance) {
+          break
+        }
+      }
     }
     
-    if (center[1] < referenceCenter.lng) {
-      offsetLng = -baseLngOffset // West
-    }
-    
-    // Alternate positions for consecutive items to reduce overlap
-    if (index % 2 === 1) {
-      offsetLat *= -1
-    }
-    
-    const labelPos = [center[0] + offsetLat, center[1] + offsetLng]
-    positions.push(labelPos)
+    // Use best found position or fallback
+    const finalPos = bestPos || [center[0] + baseOffset, center[1] + baseOffset]
+    positions.push(finalPos)
+    usedPositions.push(finalPos)
   })
   
   return positions
@@ -1003,17 +1040,6 @@ function getFeatureCenter(feature) {
   return [totalLat / pointCount, totalLng / pointCount]
 }
 
-// Category colors for legend field (same as Legend component)
-const categoryColors = [
-  '#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a',
-  '#fee140', '#30cfd0', '#a8edea', '#fbc2eb', '#fdcbf1',
-  '#e0c3fc', '#8ec5fc', '#f5576c', '#ffa751', '#4facfe'
-]
-
-function getCategoryColor(index) {
-  return categoryColors[index % categoryColors.length]
-}
-
 // Helper function to update layer colors
 function updateLayerColors() {
   if (dataStore.geoData && geoLayer.value) {
@@ -1022,57 +1048,39 @@ function updateLayerColors() {
         const locationName = getLocationName(layer.feature)
         let fillColor
         
-        // If legend field is set, color by category
-        if (dataStore.legendField && dataStore.legendCategories.length > 0) {
-          let row = dataStore.findRowByLocation(locationName)
-          if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
-            row = dataStore.findRowByLocation(dataStore.mapFocus)
-          }
-          // No data for this location after filters -> neutral fill
-          if (!row) {
-            fillColor = '#ffffff'
-          } else {
-            const selectionActive = Array.isArray(dataStore.legendSelected) && dataStore.legendSelected.length > 0
-            const selSet = selectionActive ? new Set(dataStore.legendSelected.map(String)) : null
-            const categoryValue = row[dataStore.legendField]
-            const inSelection = !selectionActive || (categoryValue != null && selSet.has(String(categoryValue)))
-            if (!inSelection) {
-              fillColor = '#cccccc'
-            } else {
-              const categoryIndex = dataStore.legendCategories.indexOf(categoryValue)
-              fillColor = getCategoryColor(categoryIndex >= 0 ? categoryIndex : 0)
-            }
-          }
-        } else {
-          // Otherwise, color by numeric metric or count-based value
-          let value = null
+        // Color by numeric metric or count-based value
+        let value = null
 
-          if (dataStore.selectedMetric) {
-            value = dataStore.getValueForLocation(locationName)
-            if ((value === null || isNaN(value)) && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
-              value = dataStore.getValueForLocation(dataStore.mapFocus)
-            }
-          } else if (Array.isArray(dataStore.valueFields) && dataStore.valueFields.some(v => v && v.agg === 'count')) {
-            const aggregates =
-              typeof dataStore.getLocationAggregates === 'function'
-                ? dataStore.getLocationAggregates(locationName)
-                : null
-            if (aggregates && aggregates.valueSummaries && aggregates.valueSummaries.length > 0) {
-              const countSummary = aggregates.valueSummaries.find(s => s && s.agg === 'count')
-              if (countSummary && typeof countSummary.total === 'number') {
-                value = countSummary.total
-              } else if (typeof aggregates.rowCount === 'number') {
-                value = aggregates.rowCount
+        if (dataStore.selectedMetric) {
+          value = dataStore.getValueForLocation(locationName)
+        } else if (Array.isArray(dataStore.valueFields) && dataStore.valueFields.length > 0) {
+          const aggregates =
+            typeof dataStore.getLocationAggregates === 'function'
+              ? dataStore.getLocationAggregates(locationName)
+              : null
+          if (aggregates && aggregates.valueSummaries && aggregates.valueSummaries.length > 0) {
+            const countSummary = aggregates.valueSummaries.find(s => s && s.agg === 'count')
+            if (countSummary && typeof countSummary.total === 'number') {
+              value = countSummary.total
+            } else {
+              // Try sum or avg from numeric summaries
+              const numericSummary = aggregates.valueSummaries.find(s => s && s.agg !== 'count')
+              if (numericSummary) {
+                value = numericSummary.agg === 'avg' ? numericSummary.avg : numericSummary.sum
               }
             }
           }
-
-          // No data for this location after filters -> neutral fill
-          if (value === null || isNaN(value)) {
-            fillColor = '#ffffff'
-          } else {
-            fillColor = dataStore.getColorForValue(value)
+          // Fallback to row count if no specific summary
+          if ((value === null || isNaN(value)) && aggregates && typeof aggregates.rowCount === 'number') {
+            value = aggregates.rowCount
           }
+        }
+
+        // No data for this location after filters -> white fill
+        if (value === null || isNaN(value) || value === 0) {
+          fillColor = '#ffffff'
+        } else {
+          fillColor = dataStore.getColorForValue(value)
         }
         
         layer.setStyle({ fillColor })
@@ -1199,8 +1207,6 @@ watch(() => dataStore.filteredData, refreshLayerVisuals)
 watch(() => dataStore.valueFields, refreshLayerVisuals, { deep: true })
 watch(() => dataStore.selectedMetrics, refreshLayerVisuals, { deep: true })
 watch(() => dataStore.selectedMetric, refreshLayerVisuals)
-watch(() => dataStore.legendField, refreshLayerVisuals)
-watch(() => dataStore.legendCategories, refreshLayerVisuals, { deep: true })
 
 // Watch for map level changes to reload appropriate GeoJSON
 watch(() => dataStore.mapLevel, async () => {
@@ -1309,6 +1315,36 @@ watch(() => map.value, (newMap) => {
   min-width: 180px;
 }
 
+.map-options-card.is-collapsed {
+  padding: 6px 8px;
+}
+
+.map-options-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.map-options-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.map-options-toggle {
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  color: #2563eb;
+  cursor: pointer;
+  padding: 0;
+}
+
+.map-options-toggle:hover {
+  text-decoration: underline;
+}
+
 .map-options-row {
   display: flex;
   align-items: center;
@@ -1353,6 +1389,8 @@ watch(() => map.value, (newMap) => {
 .callout-label {
   background: transparent !important;
   border: none !important;
+  width: auto !important;
+  height: auto !important;
 }
 
 .callout-content {
@@ -1471,6 +1509,8 @@ watch(() => map.value, (newMap) => {
   display: flex;
   justify-content: flex-start;
   gap: 2px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .callout-metric .metric-name {

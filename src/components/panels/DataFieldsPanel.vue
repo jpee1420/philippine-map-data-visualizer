@@ -146,180 +146,6 @@
           </div>
           
           <div class="pivot-area">
-            <div class="pivot-area-title">Legend (Series)</div>
-            <div
-              class="pivot-drop-zone"
-              @dragover.prevent
-              @drop="onDropToArea('legend')"
-            >
-              <div
-                v-for="(name, index) in legendArea"
-                :key="name"
-                class="pivot-chip"
-                draggable="true"
-                @dragstart="onFieldDragStart(name, 'legend')"
-              >
-                <n-popover
-                  placement="left"
-                  trigger="click"
-                >
-                  <template #trigger>
-                    <button type="button" class="chip-trigger">
-                      <span class="chip-label">{{ name }}</span>
-                      <span class="chip-dropdown-arrow">▼</span>
-                    </button>
-                  </template>
-                  <div class="pivot-popover">
-                    <template v-if="index === 0 && dataStore.legendField">
-                      <div class="pivot-popover-header">
-                        <span class="popover-title">{{ dataStore.legendField }}</span>
-                        <button
-                          v-if="hasLegendFilter"
-                          type="button"
-                          class="popover-action"
-                          @click.stop="clearLegendSelections()"
-                        >
-                          Clear filter
-                        </button>
-                      </div>
-                      <div class="pivot-popover-search">
-                        <n-input
-                          v-model:value="legendSearch"
-                          size="tiny"
-                          placeholder="Search..."
-                          clearable
-                        />
-                      </div>
-                      <div class="pivot-popover-selectall">
-                        <n-checkbox
-                          :checked="isAllLegendVisibleSelected"
-                          @update:checked="toggleLegendSelectAll"
-                        >
-                          (Select All)
-                        </n-checkbox>
-                      </div>
-                      <div class="pivot-popover-list">
-                        <div
-                          v-for="cat in visibleLegendCategories"
-                          :key="cat"
-                          class="pivot-popover-item"
-                        >
-                          <n-checkbox
-                            :checked="isLegendCategoryChecked(cat)"
-                            @update:checked="checked => updateLegendCheckbox(cat, checked)"
-                          >
-                            {{ cat }}
-                          </n-checkbox>
-                        </div>
-                      </div>
-                    </template>
-                    <template v-else>
-                      <div class="pivot-popover-header">
-                        <span class="popover-title">{{ name }}</span>
-                      </div>
-                      <div class="pivot-popover-body">
-                        <div class="popover-hint">
-                          Only the top legend field controls the map legend. Additional legend fields are reserved for charts.
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-                </n-popover>
-                <button
-                  type="button"
-                  class="chip-remove"
-                  @click.stop="removeFromArea('legend', name)"
-                >
-                  ×
-                </button>
-              </div>
-              <div v-if="!legendArea.length" class="pivot-placeholder">
-                Drop fields here (first field controls map legend)
-              </div>
-            </div>
-          </div>
-          
-          <div class="pivot-area">
-            <div class="pivot-area-title">Axis (Categories)</div>
-            <div
-              class="pivot-drop-zone"
-              @dragover.prevent
-              @drop="onDropToArea('axis')"
-            >
-              <div
-                v-for="name in axisArea"
-                :key="name"
-                class="pivot-chip"
-                draggable="true"
-                @dragstart="onFieldDragStart(name, 'axis')"
-              >
-                <n-popover placement="left" trigger="click">
-                  <template #trigger>
-                    <button type="button" class="chip-trigger">
-                      <span class="chip-label">{{ name }}</span>
-                      <span class="chip-dropdown-arrow">▼</span>
-                    </button>
-                  </template>
-                  <div class="pivot-popover">
-                    <div class="pivot-popover-header">
-                      <span class="popover-title">{{ name }}</span>
-                      <button
-                        v-if="hasFilterSelections(name)"
-                        type="button"
-                        class="popover-action"
-                        @click.stop="clearFilterFieldSelections(name)"
-                      >
-                        Clear filter
-                      </button>
-                    </div>
-                    <div class="pivot-popover-search">
-                      <n-input
-                        :value="getFilterSearch(name)"
-                        size="tiny"
-                        placeholder="Search..."
-                        clearable
-                        @update:value="val => updateFilterSearch(name, val)"
-                      />
-                    </div>
-                    <div class="pivot-popover-selectall">
-                      <n-checkbox
-                        :checked="isFilterAllSelected(name)"
-                        @update:checked="checked => toggleFilterSelectAll(name, checked)"
-                      >
-                        (Select All)
-                      </n-checkbox>
-                    </div>
-                    <div class="pivot-popover-list">
-                      <div
-                        v-for="val in getFilterVisibleValues(name)"
-                        :key="String(val)"
-                        class="pivot-popover-item"
-                      >
-                        <n-checkbox
-                          :checked="isFilterValueChecked(name, val)"
-                          @update:checked="() => toggleFilterValue(name, val)"
-                        >
-                          {{ val }}
-                        </n-checkbox>
-                      </div>
-                    </div>
-                  </div>
-                </n-popover>
-                <button
-                  type="button"
-                  class="chip-remove"
-                  @click.stop="removeFromArea('axis', name)"
-                >
-                  ×
-                </button>
-              </div>
-              <div v-if="!axisArea.length" class="pivot-placeholder">
-                Drop fields here to control labels and grouping
-              </div>
-            </div>
-          </div>
-          
-          <div class="pivot-area">
             <div class="pivot-area-title">Σ Values</div>
             <div
               class="pivot-drop-zone"
@@ -410,17 +236,14 @@ const fieldSearch = ref('')
 const activeTab = ref('fields') // 'fields' | 'stats'
 
 const filtersArea = ref([])
-const legendArea = ref([])
-const axisArea = ref([])
 const valuesArea = ref([])
 const valueAggMap = ref({}) // field -> 'sum' | 'avg' | 'count'
 
 const filterSearchMap = ref({})
-const legendSearch = ref('')
 
 // Drag state
 const dragFieldName = ref(null)
-const dragSourceArea = ref(null) // 'list' | 'filters' | 'legend' | 'axis' | 'values'
+const dragSourceArea = ref(null) // 'list' | 'filters' | 'values'
 
 // All dataset fields with metric info
 const allFieldDefs = computed(() => {
@@ -430,15 +253,36 @@ const allFieldDefs = computed(() => {
 
   const normalizeKey = (raw) => String(raw || '').toLowerCase().replace(/[^a-z]/g, '')
 
-  const hasRegionAlias = keys.some(k => k !== 'region' && normalizeKey(k) === 'region')
-  const hasProvinceAlias = keys.some(k => k !== 'province' && normalizeKey(k) === 'province')
-  const hasCityAlias = keys.some(k => k !== 'city' && normalizeKey(k) === 'city')
+  const regionAliasKeys = new Set(['region', 'regionname', 'reg'])
+  const provinceAliasKeys = new Set(['province', 'provincename', 'prov'])
+  const cityAliasKeys = new Set([
+    'city',
+    'cityname',
+    'municipality',
+    'municipal',
+    'municipalname',
+    'municipalitycity',
+    'cities',
+    'municipalities',
+    'citymunicipality',
+    'citiesmunicipalities',
+    'citymunicipalityname',
+    'citiesandmunicipalities',
+    'cityandmunicipality',
+    'citymunicipal',
+    'mun',
+    'municity'
+  ])
+
+  const hasRegionAlias = keys.some(k => k !== 'region' && regionAliasKeys.has(normalizeKey(k)))
+  const hasProvinceAlias = keys.some(k => k !== 'province' && provinceAliasKeys.has(normalizeKey(k)))
+  const hasCityAlias = keys.some(k => k !== 'city' && cityAliasKeys.has(normalizeKey(k)))
 
   const visibleKeys = keys.filter(k => {
     const nk = normalizeKey(k)
-    if (k === 'region' && nk === 'region' && hasRegionAlias) return false
-    if (k === 'province' && nk === 'province' && hasProvinceAlias) return false
-    if (k === 'city' && nk === 'city' && hasCityAlias) return false
+    if (k === 'region' && hasRegionAlias && regionAliasKeys.has(nk)) return false
+    if (k === 'province' && hasProvinceAlias && provinceAliasKeys.has(nk)) return false
+    if (k === 'city' && hasCityAlias && cityAliasKeys.has(nk)) return false
     return true
   })
 
@@ -461,8 +305,6 @@ const isFieldUsed = (name) => {
   const n = String(name)
   return (
     filtersArea.value.includes(n) ||
-    legendArea.value.includes(n) ||
-    axisArea.value.includes(n) ||
     valuesArea.value.includes(n)
   )
 }
@@ -476,10 +318,6 @@ const removeFromAreaLocal = (area, name) => {
   const n = String(name)
   if (area === 'filters') {
     filtersArea.value = filtersArea.value.filter(v => v !== n)
-  } else if (area === 'legend') {
-    legendArea.value = legendArea.value.filter(v => v !== n)
-  } else if (area === 'axis') {
-    axisArea.value = axisArea.value.filter(v => v !== n)
   } else if (area === 'values') {
     valuesArea.value = valuesArea.value.filter(v => v !== n)
     const map = { ...valueAggMap.value }
@@ -506,14 +344,6 @@ const onDropToArea = (area) => {
   if (area === 'filters') {
     if (!filtersArea.value.includes(n)) {
       filtersArea.value = [...filtersArea.value, n]
-    }
-  } else if (area === 'legend') {
-    if (!legendArea.value.includes(n)) {
-      legendArea.value = [...legendArea.value, n]
-    }
-  } else if (area === 'axis') {
-    if (!axisArea.value.includes(n)) {
-      axisArea.value = [...axisArea.value, n]
     }
   } else if (area === 'values') {
     if (!valuesArea.value.includes(n)) {
@@ -656,82 +486,6 @@ const toggleFilterValue = (field, value) => {
 
 const clearFilterFieldSelections = (field) => {
   dataStore.clearFilterSelections(field)
-}
-
-// Helpers for Legend popover (active legend field is the first item in legendArea)
-const allLegendCategories = computed(() => dataStore.legendCategories || [])
-
-const visibleLegendCategories = computed(() => {
-  const q = legendSearch.value.trim().toLowerCase()
-  if (!q) return allLegendCategories.value
-  return allLegendCategories.value.filter(name =>
-    String(name).toLowerCase().includes(q)
-  )
-})
-
-const hasLegendFilter = computed(() => {
-  return Array.isArray(dataStore.legendSelected) &&
-    dataStore.legendSelected.length > 0
-})
-
-const isLegendCategoryChecked = (name) => {
-  // null = all categories selected
-  if (!Array.isArray(dataStore.legendSelected)) {
-    return true
-  }
-  const selected = dataStore.legendSelected.map(String)
-  if (selected.length === 0) return false
-  return selected.includes(String(name))
-}
-
-const isAllLegendVisibleSelected = computed(() => {
-  // Treat null (no explicit filter) as all selected
-  if (!Array.isArray(dataStore.legendSelected)) return true
-  const selected = dataStore.legendSelected.map(String)
-  const all = allLegendCategories.value.map(v => String(v))
-  if (selected.length === 0) return false
-  if (selected.length !== all.length) return false
-  const set = new Set(selected)
-  return all.every(v => set.has(v))
-})
-
-const updateLegendCheckbox = (name, checked) => {
-  const all = allLegendCategories.value.map(v => String(v))
-  const key = String(name)
-
-  // Start from current selection; null means all categories currently selected
-  let current = Array.isArray(dataStore.legendSelected)
-    ? dataStore.legendSelected.map(v => String(v))
-    : all.slice()
-
-  if (checked) {
-    if (!current.includes(key)) {
-      current.push(key)
-    }
-  } else {
-    current = current.filter(v => v !== key)
-  }
-
-  // If we ended up with all categories explicitly selected, collapse back to null (no filter)
-  if (current.length === all.length) {
-    dataStore.setLegendSelections(null)
-  } else {
-    dataStore.setLegendSelections(current)
-  }
-}
-
-const toggleLegendSelectAll = (checked) => {
-  if (checked) {
-    // Select all -> no explicit filter
-    dataStore.setLegendSelections(null)
-  } else {
-    // Deselect all
-    dataStore.setLegendSelections([])
-  }
-}
-
-const clearLegendSelections = () => {
-  dataStore.clearLegendSelections()
 }
 
 // Global stats summary for current filtered data and value fields,
@@ -881,8 +635,6 @@ const syncAreasToStore = () => {
 
     dataStore.updatePivotConfig({
       filters: filtersArea.value,
-      legendField: legendArea.value[0] || null,
-      axisFields: axisArea.value,
       valueDefs
     })
   })
@@ -892,12 +644,6 @@ const syncAreasToStore = () => {
 const initFromStore = () => {
   filtersArea.value = Array.isArray(dataStore.filterDimensions)
     ? dataStore.filterDimensions.slice()
-    : []
-
-  legendArea.value = dataStore.legendField ? [dataStore.legendField] : []
-
-  axisArea.value = Array.isArray(dataStore.axisFields)
-    ? dataStore.axisFields.slice()
     : []
 
   valuesArea.value = []
@@ -925,12 +671,9 @@ watch(
     if (!newDataset || newDataset.length === 0) {
       fieldSearch.value = ''
       filtersArea.value = []
-      legendArea.value = []
-      axisArea.value = []
       valuesArea.value = []
       valueAggMap.value = {}
       filterSearchMap.value = {}
-      legendSearch.value = ''
     }
   }
 )
