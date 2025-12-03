@@ -7,9 +7,6 @@
           <n-text strong>View Level</n-text>
           <n-radio-group v-model:value="selectedLevel" @update:value="handleLevelChange">
             <n-space vertical>
-              <n-radio value="country">
-                Country
-              </n-radio>
               <n-radio value="regions">
                 Regions
               </n-radio>
@@ -110,7 +107,7 @@ import { BOUNDARY_PATHS, NCR_REGION_NAME } from '@/config/mapConfig'
 
 const dataStore = useDataStore()
 
-const selectedLevel = ref('country')
+const selectedLevel = ref('regions')
 const selectedRegion = ref(null)
 const selectedProvince = ref(null)
 
@@ -153,8 +150,8 @@ const currentViewInfo = computed(() => {
     return `Viewing: ${selectedProvince.value}`
   } else if (selectedRegion.value) {
     return `Viewing: ${selectedRegion.value}`
-  } else if (selectedLevel.value === 'country') {
-    return 'Viewing: Philippines'
+  } else if (selectedLevel.value === 'regions') {
+    return 'Viewing: All regions'
   }
   return null
 })

@@ -1,15 +1,35 @@
 /**
- * Load GeoJSON data
+ * In-memory cache for GeoJSON files to avoid repeated fetches
+ */
+const geoCache = {}
+
+/**
+ * Load GeoJSON data with caching
  */
 export async function loadGeoJSON(url) {
+  // Return cached data if available
+  if (geoCache[url]) {
+    return geoCache[url]
+  }
+
   try {
     const response = await fetch(url)
     if (!response.ok) {
       throw new Error(`Failed to load GeoJSON: ${response.statusText}`)
     }
-    return await response.json()
+    const data = await response.json()
+    // Cache the result
+    geoCache[url] = data
+    return data
   } catch (error) {
     console.error('Error loading GeoJSON:', error)
     throw error
   }
+}
+
+/**
+ * Clear the GeoJSON cache (useful for testing or memory management)
+ */
+export function clearGeoCache() {
+  Object.keys(geoCache).forEach(key => delete geoCache[key])
 }

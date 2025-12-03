@@ -8,8 +8,3 @@ export function normalizeLocationName(name) {
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .trim()
 }
-
-// Backwards-compatible alias for older code paths
-export function normalizeGADMName(name) {
-  return normalizeLocationName(name)
-}

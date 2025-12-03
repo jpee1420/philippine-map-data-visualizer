@@ -55,6 +55,8 @@ import { useDataStore } from '@/store/dataStore'
 import { loadGeoJSON } from '@/utils/geoUtils'
 import { normalizeLocationName } from '@/utils/nameUtils'
 import { BOUNDARY_PATHS, NCR_REGION_NAME } from '@/config/mapConfig'
+import { COLOR_MAPS } from '@/config/colorMaps'
+
 import { debug } from '@/utils/logger'
 import { buildCalloutHtml } from '@/components/map/CalloutDialog.vue'
 
@@ -87,19 +89,11 @@ const calloutBackground = computed({
 })
 
 watch(colorScheme, (newScheme) => {
-  const colorMaps = {
-    red: ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15'],
-    blue: ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c'],
-    green: ['#edf8e9', '#bae4b3', '#74c476', '#31a354', '#006d2c'],
-    purple: ['#f2f0f7', '#cbc9e2', '#9e9ac8', '#756bb1', '#54278f'],
-    orange: ['#feedde', '#fdbe85', '#fd8d3c', '#e6550d', '#a63603']
-  }
-  const newColors = colorMaps[newScheme]
+  const newColors = COLOR_MAPS[newScheme]
   if (!newColors) return
-  dataStore.colorScale = {
-    ...dataStore.colorScale,
-    colors: newColors
-  }
+  dataStore.colorScale.colors = newColors
+  // Recalculate usableColors and trigger color scale update
+  dataStore.updateColorScale()
 })
 
 const lastFocusZoomed = ref(null) // Track last focus that was zoomed
@@ -146,13 +140,10 @@ onMounted(async () => {
 // Load GeoJSON data based on map level
 async function loadGeoJSONData() {
   const basePath = import.meta.env.BASE_URL || '/'
-  let geoJsonPath = `${basePath}${BOUNDARY_PATHS.country}` // Default to country
-  
+  let geoJsonPath = `${basePath}${BOUNDARY_PATHS.regions}` // Default to regions
+
   // Determine which GeoJSON to load based on map level
   switch (dataStore.mapLevel) {
-    case 'country':
-      geoJsonPath = `${basePath}${BOUNDARY_PATHS.country}`
-      break
     case 'regions':
       geoJsonPath = `${basePath}${BOUNDARY_PATHS.regions}`
       break
@@ -402,19 +393,20 @@ function renderGeoJSON(geoData) {
   // Create new layer
   geoLayer.value = L.geoJSON(geoData, {
     style: (feature) => {
-      // For country level without data, show outline only
-      if (dataStore.mapLevel === 'country' && !dataStore.selectedMetric) {
-        return {
-          fillColor: '#e8f4f8',
-          weight: 2,
-          opacity: 1,
-          color: '#2563eb',
-          fillOpacity: 0.3
-        }
-      }
-      
       const locationName = getLocationName(feature)
+      const props = feature.properties || {}
       let fillColor
+      
+      // Determine strict match level based on feature properties
+      // This ensures cities only match city data, provinces only match province data, etc.
+      let strictLevel = null
+      if (props.ADM3_EN) {
+        strictLevel = 'city' // This is a city/municipality feature
+      } else if (props.ADM2_EN) {
+        strictLevel = 'province' // This is a province feature
+      } else if (props.ADM1_EN) {
+        strictLevel = 'region' // This is a region feature
+      }
       
       // Color by numeric metric or count-based value
       let value = null
@@ -428,7 +420,7 @@ function renderGeoJSON(geoData) {
       } else if (Array.isArray(dataStore.valueFields) && dataStore.valueFields.length > 0) {
         const aggregates =
           typeof dataStore.getLocationAggregates === 'function'
-            ? dataStore.getLocationAggregates(locationName)
+            ? dataStore.getLocationAggregates(locationName, strictLevel)
             : null
         if (aggregates && aggregates.valueSummaries && aggregates.valueSummaries.length > 0) {
           const countSummary = aggregates.valueSummaries.find(s => s && s.agg === 'count')

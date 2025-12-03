@@ -1,4 +1,4 @@
-export const MAP_LEVELS = ['country', 'regions', 'provinces']
+export const MAP_LEVELS = ['regions', 'provinces']
 
 // Root folder (under /public) where GADM JSON files live.
 // If you move them into /public/data/gadm, change this to 'data/gadm'.

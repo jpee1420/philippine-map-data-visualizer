@@ -1,6 +1,5 @@
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
-import axios from 'axios'
 
 /**
  * Parse CSV file to JSON
@@ -91,14 +90,17 @@ export async function importFromGoogleSheets(sheetUrl) {
       csvUrl = csvUrl.replace('/edit?usp=sharing', '/export?format=csv')
     }
     
-    const response = await axios.get(csvUrl)
+    const response = await fetch(csvUrl)
+    if (!response.ok) {
+      throw new Error(`HTTP error: ${response.status} ${response.statusText}`)
+    }
+    const csvText = await response.text()
     
     return new Promise((resolve, reject) => {
-      Papa.parse(response.data, {
+      Papa.parse(csvText, {
         header: true,
         dynamicTyping: true,
         skipEmptyLines: true,
-        worker: true,
         complete: (results) => {
           resolve(results.data)
         },

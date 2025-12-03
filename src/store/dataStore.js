@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { normalizeLocationName } from '@/utils/nameUtils'
+import { COLOR_MAPS } from '@/config/colorMaps'
 
 // Region name aliases for matching GeoJSON with CSV data
 // Maps canonical region name to all possible variations
@@ -234,7 +236,7 @@ export const useDataStore = defineStore('dataStore', {
     filterSelections: {},
     availableMetrics: [],
     valueFields: [], // [{ field, agg }] for metrics and counts
-    mapLevel: 'country', // 'country', 'regions', or 'provinces'
+    mapLevel: 'regions', // 'regions' or 'provinces'
     mapFocus: null, // Specific location to focus on (e.g., "Ilocos Region")
     selectedSubdivisions: [], // Array of selected subdivisions to show boundaries
     hideInternalBoundaries: false, // Hide internal boundaries
@@ -243,7 +245,9 @@ export const useDataStore = defineStore('dataStore', {
     colorScale: {
       min: 0,
       max: 100,
-      colors: ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c'] // Default to blue
+      breaks: null, // Quantile breaks for better color distribution
+      colors: COLOR_MAPS.blue,
+      usableColors: COLOR_MAPS.blue.filter(c => c.toLowerCase() !== '#ffffff') // Pre-computed for performance
     },
     locationRowsCache: {},
     locationAggregatesCache: {}
@@ -311,6 +315,8 @@ export const useDataStore = defineStore('dataStore', {
     
     setGeoData(geo) {
       this.geoData = geo
+      // Recalculate color scale based on new geo features
+      this.updateColorScale()
     },
     
     detectMetrics() {
@@ -536,14 +542,123 @@ export const useDataStore = defineStore('dataStore', {
         const stats = this.metricStats
         this.colorScale.min = stats.min
         this.colorScale.max = stats.max
-      } else if (Array.isArray(this.valueFields) && this.valueFields.some(v => v && v.agg === 'count')) {
-        const totalRows = (this.filteredData || []).length
-        this.colorScale.min = 0
-        this.colorScale.max = Math.max(1, totalRows || 0)
+        this.colorScale.breaks = null // Clear quantile breaks for metric mode
+      } else if (Array.isArray(this.valueFields) && this.valueFields.length > 0) {
+        // Compute actual values and create quantile breaks for better color distribution
+        const values = this._computeLocationValues()
+        if (values.length > 0) {
+          const sorted = [...values].sort((a, b) => a - b)
+          const numColors = (this.colorScale.colors || []).length || 8
+          
+          // Create quantile breaks for each color bucket
+          const breaks = []
+          for (let i = 0; i <= numColors; i++) {
+            const idx = Math.min(Math.floor((i / numColors) * sorted.length), sorted.length - 1)
+            breaks.push(sorted[idx])
+          }
+          
+          this.colorScale.min = 0
+          this.colorScale.max = sorted[sorted.length - 1]
+          this.colorScale.breaks = breaks // Store breaks for quantile-based coloring
+        } else {
+          this.colorScale.min = 0
+          this.colorScale.max = 1
+          this.colorScale.breaks = null
+        }
       } else {
         this.colorScale.min = 0
         this.colorScale.max = 100
+        this.colorScale.breaks = null
       }
+      // Pre-compute usable colors (excluding white) for performance
+      const palette = this.colorScale.colors || []
+      this.colorScale.usableColors = palette.filter(c =>
+        typeof c === 'string' && c.trim().toLowerCase() !== '#ffffff'
+      )
+    },
+
+    // Compute aggregated values for all locations in current geoData
+    // Excludes parent outline features to prevent skewing the color scale
+    _computeLocationValues() {
+      const values = []
+      const features = this.geoData?.features || []
+      const defs = Array.isArray(this.valueFields) ? this.valueFields : []
+      
+      if (defs.length === 0 || features.length === 0) return values
+
+      // Determine current map level to skip parent outline features
+      const mapLevel = this.mapLevel
+      const hasFocus = !!this.mapFocus
+      const hasSubdivisions = Array.isArray(this.selectedSubdivisions) && this.selectedSubdivisions.length > 0
+
+      for (const feature of features) {
+        const props = feature.properties || {}
+        
+        // Skip parent outline features - they aggregate all child data and skew the scale
+        // In regions view with focus: skip region outline (has ADM1_EN but not ADM2_EN)
+        // In provinces view with focus: skip province outline (has ADM2_EN but not ADM3_EN)
+        if (hasFocus && hasSubdivisions) {
+          if (mapLevel === 'regions') {
+            // Skip region outline feature (has region name but no province/city)
+            if (props.ADM1_EN && !props.ADM2_EN && !props.ADM3_EN) {
+              continue
+            }
+          } else if (mapLevel === 'provinces') {
+            // Skip province outline feature (has province name but no city)
+            if (props.ADM2_EN && !props.ADM3_EN) {
+              continue
+            }
+          }
+        }
+        
+        const rawName =
+          props.ADM3_EN ||
+          props.ADM2_EN ||
+          props.ADM1_EN ||
+          props.ADM0_EN ||
+          props.NAME_2 ||
+          props.NAME_1 ||
+          props.NAME_0 ||
+          ''
+        
+        if (!rawName) continue
+        
+        // Determine strict match level based on feature properties
+        let strictLevel = null
+        if (props.ADM3_EN) {
+          strictLevel = 'city'
+        } else if (props.ADM2_EN) {
+          strictLevel = 'province'
+        } else if (props.ADM1_EN) {
+          strictLevel = 'region'
+        }
+        
+        // Normalize location name for consistent matching
+        const locationName = normalizeLocationName(rawName)
+
+        const aggregates = this.getLocationAggregates(locationName, strictLevel)
+        if (!aggregates || !aggregates.valueSummaries) continue
+
+        for (const summary of aggregates.valueSummaries) {
+          if (!summary) continue
+          
+          let value = null
+          if (summary.agg === 'count' && typeof summary.total === 'number') {
+            value = summary.total
+          } else if (summary.agg === 'avg' && summary.avg != null && !isNaN(summary.avg)) {
+            value = summary.avg
+          } else if (summary.sum != null && !isNaN(summary.sum)) {
+            value = summary.sum
+          }
+
+          if (value !== null && !isNaN(value) && value > 0) {
+            values.push(value)
+            break // Use first valid value for this location
+          }
+        }
+      }
+
+      return values
     },
     
     // Helper to find data row by location name with alias matching
@@ -594,19 +709,45 @@ export const useDataStore = defineStore('dataStore', {
     
     getColorForValue(value) {
       // No data or invalid value -> render polygon with white fill
-      if (value === null || value === undefined || isNaN(value)) return '#ffffff'
+      if (value === null || value === undefined || isNaN(value) || value === 0) return '#ffffff'
+
+      const { min, max, breaks, usableColors: precomputed } = this.colorScale
       
-      const { min, max, colors } = this.colorScale
-      
-      // If min equals max (single value), return first color
-      if (min === max) return colors[0]
-      
+      // Use pre-computed usable colors for performance
+      const usableColors = Array.isArray(precomputed) && precomputed.length > 0
+        ? precomputed
+        : ['#eff6ff', '#dbeafe', '#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8']
+
+      if (usableColors.length === 0) {
+        return '#ffffff'
+      }
+
+      // If min equals max (single value), use the middle color in the palette
+      if (min === max) {
+        return usableColors[Math.floor(usableColors.length / 2)]
+      }
+
+      // Use quantile breaks if available for better distribution
+      if (Array.isArray(breaks) && breaks.length > 1) {
+        // Find which bucket the value falls into
+        for (let i = 0; i < usableColors.length; i++) {
+          const lower = breaks[i] || 0
+          const upper = breaks[i + 1] !== undefined ? breaks[i + 1] : Infinity
+          if (value >= lower && value <= upper) {
+            return usableColors[i]
+          }
+        }
+        // Fallback to last color if value exceeds all breaks
+        return usableColors[usableColors.length - 1]
+      }
+
+      // Fallback to linear interpolation
       const normalized = (value - min) / (max - min)
-      // Clamp normalized value between 0 and 1
       const clamped = Math.max(0, Math.min(1, normalized))
-      const index = Math.floor(clamped * (colors.length - 1))
-      
-      return colors[Math.max(0, Math.min(colors.length - 1, index))]
+      const lastIndex = usableColors.length - 1
+      const index = Math.floor(clamped * lastIndex)
+
+      return usableColors[Math.max(0, Math.min(lastIndex, index))]
     },
     
     // Sum all metric values for rows whose region matches the given region name (variant-aware)
@@ -628,11 +769,12 @@ export const useDataStore = defineStore('dataStore', {
     
     // Get all filtered rows that belong to the given location name, matching
     // by city, then province, then region (using variant-aware region matching).
-    _getRowsForLocation(location) {
+    // When strictLevel is specified, only match at that level (no fallback to parent levels).
+    _getRowsForLocation(location, strictLevel = null) {
       if (!location) return []
-      const targetNorm = _norm(location)
-      if (this.locationRowsCache && this.locationRowsCache[targetNorm]) {
-        return this.locationRowsCache[targetNorm]
+      const cacheKey = strictLevel ? `${_norm(location)}__${strictLevel}` : _norm(location)
+      if (this.locationRowsCache && this.locationRowsCache[cacheKey]) {
+        return this.locationRowsCache[cacheKey]
       }
       const rows = this.filteredData || []
       const results = []
@@ -644,56 +786,70 @@ export const useDataStore = defineStore('dataStore', {
         let matched = false
 
         // City-level match (variant-aware, handles "City of X" vs "X City")
-        if (r.city) {
-          const cityVars = _expandVariants(r.city)
-          for (const v of cityVars) {
-            if (targetVariants.has(v)) {
-              results.push(r)
-              matched = true
-              break
+        if (strictLevel === null || strictLevel === 'city') {
+          if (r.city) {
+            const cityVars = _expandVariants(r.city)
+            for (const v of cityVars) {
+              if (targetVariants.has(v)) {
+                results.push(r)
+                matched = true
+                break
+              }
             }
           }
         }
         if (matched) continue
+        if (strictLevel === 'city') continue // Don't fallback if strict city matching
 
         // Province-level match (variant-aware)
-        if (r.province) {
-          const provVars = _expandVariants(r.province)
-          for (const v of provVars) {
-            if (targetVariants.has(v)) {
-              results.push(r)
-              matched = true
-              break
+        if (strictLevel === null || strictLevel === 'province') {
+          if (r.province) {
+            const provVars = _expandVariants(r.province)
+            for (const v of provVars) {
+              if (targetVariants.has(v)) {
+                results.push(r)
+                matched = true
+                break
+              }
             }
           }
         }
         if (matched) continue
+        if (strictLevel === 'province') continue // Don't fallback if strict province matching
 
         // Region-level match (uses alias-aware matcher)
-        if (_isRegionMatch(r.region, location)) {
-          results.push(r)
+        if (strictLevel === null || strictLevel === 'region') {
+          if (_isRegionMatch(r.region, location)) {
+            results.push(r)
+          }
         }
       }
 
       if (!this.locationRowsCache) this.locationRowsCache = {}
-      this.locationRowsCache[targetNorm] = results
+      this.locationRowsCache[cacheKey] = results
       return results
     },
 
     // Aggregate current valueFields for a given location using filteredData.
     // For agg === 'count' on a categorical field, returns counts per value.
     // For numeric fields (sum/avg), returns sum, avg and row count.
-    getLocationAggregates(location) {
+    // strictLevel: 'city', 'province', or 'region' - only match at that level
+    getLocationAggregates(location, strictLevel = null) {
       if (!location) return null
 
-      const cacheKey = _norm(location)
+      const cacheKey = strictLevel ? `${_norm(location)}__${strictLevel}` : _norm(location)
       const cache = this.locationAggregatesCache || {}
       if (Object.prototype.hasOwnProperty.call(cache, cacheKey)) {
         return cache[cacheKey]
       }
 
-      const rows = this._getRowsForLocation(location)
-      if (!rows || rows.length === 0) return null
+      const rows = this._getRowsForLocation(location, strictLevel)
+      if (!rows || rows.length === 0) {
+        // Cache null result to avoid repeated lookups
+        if (!this.locationAggregatesCache) this.locationAggregatesCache = {}
+        this.locationAggregatesCache[cacheKey] = null
+        return null
+      }
 
       const defs = Array.isArray(this.valueFields) ? this.valueFields : []
       if (defs.length === 0) return null
@@ -710,11 +866,18 @@ export const useDataStore = defineStore('dataStore', {
           let total = 0
           for (const row of rows) {
             const raw = row[field]
-            const key = raw === null || raw === undefined || raw === ''
-              ? '(blank)'
-              : String(raw)
+            const isBlank =
+              raw === null ||
+              raw === undefined ||
+              (typeof raw === 'string' && raw.trim() === '')
+
+            const key = isBlank ? '(blank)' : String(raw).trim()
             counts[key] = (counts[key] || 0) + 1
-            total += 1
+
+            // Only non-blank values contribute to the total used for coloring
+            if (!isBlank) {
+              total += 1
+            }
           }
           summaries.push({ field, agg: 'count', total, counts })
         } else {

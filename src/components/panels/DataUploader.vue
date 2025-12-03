@@ -36,21 +36,6 @@
             </n-text>
           </n-space>
         </n-tab-pane>
-        
-        <!-- Sample Data Tab -->
-        <n-tab-pane name="sample" tab="Sample Data">
-          <n-space vertical>
-            <n-text>Load sample Philippine regional data for testing</n-text>
-            <n-button type="success" @click="loadSampleData" block>
-              Load Basic Sample Data
-            </n-button>
-            <n-divider />
-            <n-text>Load sample data with gender breakdowns</n-text>
-            <n-button type="info" @click="loadSampleDataWithBreakdowns" block>
-              Load Sample Data (with Gender Breakdown)
-            </n-button>
-          </n-space>
-        </n-tab-pane>
       </n-tabs>
       
       <!-- Status Messages -->
@@ -81,9 +66,8 @@
 import { ref } from 'vue'
 import { 
   NCard, NTabs, NTabPane, NUpload, NButton, NInput, 
-  NSpace, NText, NAlert, NDivider
+  NSpace, NText, NAlert
 } from 'naive-ui'
-import Papa from 'papaparse'
 import { useDataStore } from '@/store/dataStore'
 import { parseFile, importFromGoogleSheets, validateData } from '@/utils/dataParser'
 
@@ -136,76 +120,6 @@ async function handleGoogleSheets() {
     successMessage.value = `Successfully imported ${data.length} rows from Google Sheets`
   } catch (error) {
     errorMessage.value = error.message
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadSampleData() {
-  try {
-    loading.value = true
-    errorMessage.value = ''
-    
-    // Load the sample CSV file with correct base path
-    const basePath = import.meta.env.BASE_URL || '/'
-    const response = await fetch(`${basePath}data/sample-data-basic.csv`)
-    if (!response.ok) {
-      throw new Error(`Failed to fetch sample data: ${response.statusText}`)
-    }
-    const csvText = await response.text()
-    
-    // Parse the CSV directly using PapaParse
-    const data = await new Promise((resolve, reject) => {
-      Papa.parse(csvText, {
-        header: true,
-        dynamicTyping: true,
-        skipEmptyLines: true,
-        worker: true,
-        complete: (results) => resolve(results.data),
-        error: (error) => reject(error)
-      })
-    })
-    
-    validateData(data)
-    dataStore.setDataset(data)
-    successMessage.value = `Loaded ${data.length} sample records from Philippine cities`
-  } catch (error) {
-    errorMessage.value = 'Failed to load sample data: ' + error.message
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadSampleDataWithBreakdowns() {
-  try {
-    loading.value = true
-    errorMessage.value = ''
-    
-    // Load the sample CSV file with gender breakdowns
-    const basePath = import.meta.env.BASE_URL || '/'
-    const response = await fetch(`${basePath}data/sample-data-with-breakdowns.csv`)
-    if (!response.ok) {
-      throw new Error(`Failed to fetch sample data: ${response.statusText}`)
-    }
-    const csvText = await response.text()
-    
-    // Parse the CSV directly using PapaParse
-    const data = await new Promise((resolve, reject) => {
-      Papa.parse(csvText, {
-        header: true,
-        dynamicTyping: true,
-        skipEmptyLines: true,
-        worker: true,
-        complete: (results) => resolve(results.data),
-        error: (error) => reject(error)
-      })
-    })
-    
-    validateData(data)
-    dataStore.setDataset(data)
-    successMessage.value = `Loaded ${data.length} sample records with gender breakdowns`
-  } catch (error) {
-    errorMessage.value = 'Failed to load sample data: ' + error.message
   } finally {
     loading.value = false
   }

@@ -15,7 +15,6 @@
   "dependencies": {
     "@jobuntux/psgc": "^0.2.1",
     "@vicons/ionicons5": "^0.13.0",
-    "axios": "^1.13.2",
     "echarts": "^6.0.0",
     "leaflet": "^1.9.4",
     "mapbox-gl": "^3.16.0",
