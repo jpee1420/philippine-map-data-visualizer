@@ -3,7 +3,8 @@ import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
-  base: '/philippine-map-data-visualizer/',
+  base: '/', 
+  // '/philippine-map-data-visualizer/',
   plugins: [vue()],
   build: {
     sourcemap: false,
