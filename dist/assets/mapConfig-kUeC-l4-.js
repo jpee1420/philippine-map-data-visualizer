@@ -1,0 +1,1 @@
+const a="data",_={country:`${a}/phl_admbnda_adm0_singlepart_psa_namria_20231106.json`,regions:`${a}/phl_admbnda_adm1_psa_namria_20231106.json`,provinces:`${a}/phl_admbnda_adm2_psa_namria_20231106.json`,cities:`${a}/phl_admbnda_adm3_psa_namria_20231106.json`},n="National Capital Region";export{_ as B,n as N};
