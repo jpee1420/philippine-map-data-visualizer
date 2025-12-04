@@ -27,9 +27,3 @@ export async function loadGeoJSON(url) {
   }
 }
 
-/**
- * Clear the GeoJSON cache (useful for testing or memory management)
- */
-export function clearGeoCache() {
-  Object.keys(geoCache).forEach(key => delete geoCache[key])
-}

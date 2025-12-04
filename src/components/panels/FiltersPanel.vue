@@ -21,10 +21,12 @@
 </template>
 
 <script setup>
+import { defineAsyncComponent } from 'vue'
 import { NIcon } from 'naive-ui'
 import { Funnel as FilterIcon } from '@vicons/ionicons5'
-import MapSelector from '@/components/map/MapSelector.vue'
-import DataUploader from '@/components/panels/DataUploader.vue'
+
+const MapSelector = defineAsyncComponent(() => import('@/components/map/MapSelector.vue'))
+const DataUploader = defineAsyncComponent(() => import('@/components/panels/DataUploader.vue'))
 
 </script>
 

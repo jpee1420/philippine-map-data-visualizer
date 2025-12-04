@@ -8,3 +8,11 @@ export function normalizeLocationName(name) {
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .trim()
 }
+
+/**
+ * Normalize a header/field key for consistent matching
+ * Converts to lowercase and removes non-alphabetic characters
+ */
+export function normalizeKey(raw) {
+  return String(raw || '').toLowerCase().replace(/[^a-z]/g, '')
+}

@@ -85,14 +85,6 @@
             </n-checkbox>
           </div>
         </div>
-
-        <!-- Current View Info -->
-        <n-alert v-if="currentViewInfo" type="info" size="small">
-          <template #icon>
-            <span>📌</span>
-          </template>
-          {{ currentViewInfo }}
-        </n-alert>
       </n-space>
     </n-card>
   </div>
@@ -100,7 +92,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { NCard, NSpace, NText, NRadioGroup, NRadio, NSelect, NAlert, NCheckbox } from 'naive-ui'
+import { NCard, NSpace, NText, NRadioGroup, NRadio, NSelect, NCheckbox } from 'naive-ui'
 import { useDataStore } from '@/store/dataStore'
 import { normalizeLocationName } from '@/utils/nameUtils'
 import { BOUNDARY_PATHS, NCR_REGION_NAME } from '@/config/mapConfig'
@@ -114,7 +106,6 @@ const selectedProvince = ref(null)
 // Available locations from GeoJSON
 const availableRegions = ref([])
 const availableProvinces = ref([])
-// City list removed
 
 // Subdivisions within current focus
 const subdivisions = ref([])
@@ -142,26 +133,11 @@ const provinceOptions = computed(() =>
   }))
 )
 
-// City options removed
-
-// Current view information
-const currentViewInfo = computed(() => {
-  if (selectedProvince.value) {
-    return `Viewing: ${selectedProvince.value}`
-  } else if (selectedRegion.value) {
-    return `Viewing: ${selectedRegion.value}`
-  } else if (selectedLevel.value === 'regions') {
-    return 'Viewing: All regions'
-  }
-  return null
-})
-
 // Handlers
 function handleLevelChange(level) {
   // Clear selections when changing levels
   selectedRegion.value = null
   selectedProvince.value = null
-  // City selection removed
   
   // Update store
   dataStore.setMapLevel(level)
@@ -180,8 +156,6 @@ function handleProvinceSelect(province) {
   clearSubdivisions()
   loadSubdivisions()
 }
-
-// City select removed
 
 function isSubdivisionChecked(item) {
   return selectedSubdivisionSet.value.has(String(item))

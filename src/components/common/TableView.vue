@@ -39,11 +39,10 @@ import { ref, computed } from 'vue'
 import { NDataTable, NInput, NButton, NIcon } from 'naive-ui'
 import { Search as SearchIcon, Download as DownloadIcon } from '@vicons/ionicons5'
 import { useDataStore } from '@/store/dataStore'
+import { normalizeKey } from '@/utils/nameUtils'
 
 const dataStore = useDataStore()
 const searchQuery = ref('')
-
-const normalizeKey = (raw) => String(raw || '').toLowerCase().replace(/[^a-z]/g, '')
 
 const displayColumnKeys = computed(() => {
   if (dataStore.dataset.length === 0) return []

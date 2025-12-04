@@ -228,6 +228,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { NIcon, NInput, NSelect, NCheckbox, NPopover, NButton, NButtonGroup } from 'naive-ui'
 import { Layers as LayersIcon } from '@vicons/ionicons5'
 import { useDataStore } from '@/store/dataStore'
+import { normalizeKey } from '@/utils/nameUtils'
 
 const dataStore = useDataStore()
 
@@ -250,8 +251,6 @@ const allFieldDefs = computed(() => {
   if (!dataStore.dataset || dataStore.dataset.length === 0) return []
   const sample = dataStore.dataset[0]
   const keys = Object.keys(sample)
-
-  const normalizeKey = (raw) => String(raw || '').toLowerCase().replace(/[^a-z]/g, '')
 
   const regionAliasKeys = new Set(['region', 'regionname', 'reg'])
   const provinceAliasKeys = new Set(['province', 'provincename', 'prov'])

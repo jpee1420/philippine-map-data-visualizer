@@ -12,20 +12,20 @@
         <!-- Left Panel: Filters -->
         <div 
           class="left-panel" 
-          :class="{ 'collapsed': leftPanelCollapsed }"
-          :style="{ width: leftPanelCollapsed ? '0' : `${leftPanelWidth}px` }"
+          :class="{ 'collapsed': isLeftPanelCollapsed }"
+          :style="{ width: isLeftPanelCollapsed ? '0' : `${leftPanelWidth}px` }"
         >
           <button 
             class="panel-toggle-btn left-toggle"
-            @click="leftPanelCollapsed = !leftPanelCollapsed"
-            :title="leftPanelCollapsed ? 'Show Filters' : 'Hide Filters'"
+            @click="isLeftPanelCollapsed = !isLeftPanelCollapsed"
+            :title="isLeftPanelCollapsed ? 'Show Filters' : 'Hide Filters'"
           >
-            <span v-if="leftPanelCollapsed">▶</span>
+            <span v-if="isLeftPanelCollapsed">▶</span>
             <span v-else>◀</span>
           </button>
-          <FiltersPanel v-show="!leftPanelCollapsed" />
+          <FiltersPanel v-show="!isLeftPanelCollapsed" />
           <div 
-            v-if="!leftPanelCollapsed"
+            v-if="!isLeftPanelCollapsed"
             class="resize-handle left-resize"
             @mousedown="startResizeLeft"
           ></div>
@@ -40,23 +40,23 @@
         <!-- Right Panel: Data Fields -->
         <div 
           class="right-panel" 
-          :class="{ 'collapsed': rightPanelCollapsed }"
-          :style="{ width: rightPanelCollapsed ? '0' : `${rightPanelWidth}px` }"
+          :class="{ 'collapsed': isRightPanelCollapsed }"
+          :style="{ width: isRightPanelCollapsed ? '0' : `${rightPanelWidth}px` }"
         >
           <div 
-            v-if="!rightPanelCollapsed"
+            v-if="!isRightPanelCollapsed"
             class="resize-handle right-resize"
             @mousedown="startResizeRight"
           ></div>
           <button 
             class="panel-toggle-btn right-toggle"
-            @click="rightPanelCollapsed = !rightPanelCollapsed"
-            :title="rightPanelCollapsed ? 'Show Data Fields' : 'Hide Data Fields'"
+            @click="isRightPanelCollapsed = !isRightPanelCollapsed"
+            :title="isRightPanelCollapsed ? 'Show Data Fields' : 'Hide Data Fields'"
           >
-            <span v-if="rightPanelCollapsed">◀</span>
+            <span v-if="isRightPanelCollapsed">◀</span>
             <span v-else>▶</span>
           </button>
-          <DataFieldsPanel v-show="!rightPanelCollapsed" />
+          <DataFieldsPanel v-show="!isRightPanelCollapsed" />
         </div>
       </div>
       
@@ -69,29 +69,55 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick, defineAsyncComponent } from 'vue'
+import { ref, watch, nextTick, defineAsyncComponent } from 'vue'
 import { NConfigProvider } from 'naive-ui'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import FiltersPanel from '@/components/panels/FiltersPanel.vue'
 import DataFieldsPanel from '@/components/panels/DataFieldsPanel.vue'
 import { useDataStore } from '@/store/dataStore'
+import { useResizablePanel } from '@/composables/useResizablePanel'
 
 const MapPanel = defineAsyncComponent(() => import('@/components/map/MapPanel.vue'))
 const TableView = defineAsyncComponent(() => import('@/components/common/TableView.vue'))
 
 const theme = ref(null) // null for light theme
 const currentView = ref('map') // 'map' or 'table'
-const leftPanelCollapsed = ref(false)
-const rightPanelCollapsed = ref(false)
-
-// Resizable panel widths
-const leftPanelWidth = ref(240)
-const rightPanelWidth = ref(280)
-const isResizingLeft = ref(false)
-const isResizingRight = ref(false)
 
 // Map panel ref
 const mapPanelRef = ref(null)
+
+// Callback to notify map of size changes
+const handleResizeEnd = () => {
+  if (mapPanelRef.value?.invalidateMapSize) {
+    mapPanelRef.value.invalidateMapSize()
+  }
+}
+
+// Resizable panels using composable
+const leftPanel = useResizablePanel({
+  initialWidth: 240,
+  minWidth: 200,
+  maxWidth: 400,
+  side: 'left',
+  onResizeEnd: handleResizeEnd
+})
+
+const rightPanel = useResizablePanel({
+  initialWidth: 280,
+  minWidth: 200,
+  maxWidth: 500,
+  side: 'right',
+  onResizeEnd: handleResizeEnd
+})
+
+// Expose panel state for template
+const leftPanelWidth = leftPanel.panelWidth
+const isLeftPanelCollapsed = leftPanel.isCollapsed
+const startResizeLeft = leftPanel.startResize
+
+const rightPanelWidth = rightPanel.panelWidth
+const isRightPanelCollapsed = rightPanel.isCollapsed
+const startResizeRight = rightPanel.startResize
 
 // Global data store
 const dataStore = useDataStore()
@@ -99,66 +125,15 @@ const dataStore = useDataStore()
 const handleViewChange = (view) => {
   currentView.value = view
   // Always turn off callout labels when switching views
-  if (dataStore && typeof dataStore.setShowCalloutLabels === 'function') {
+  if (dataStore?.setShowCalloutLabels) {
     dataStore.setShowCalloutLabels(false)
   }
 }
 
-// Resize handlers
-const startResizeLeft = () => {
-  isResizingLeft.value = true
-  document.body.style.cursor = 'ew-resize'
-  document.body.style.userSelect = 'none'
-}
-
-const startResizeRight = () => {
-  isResizingRight.value = true
-  document.body.style.cursor = 'ew-resize'
-  document.body.style.userSelect = 'none'
-}
-
-const handleMouseMove = (e) => {
-  if (isResizingLeft.value) {
-    const newWidth = e.clientX
-    if (newWidth >= 200 && newWidth <= 400) {
-      leftPanelWidth.value = newWidth
-    }
-  }
-  
-  if (isResizingRight.value) {
-    const newWidth = window.innerWidth - e.clientX
-    if (newWidth >= 200 && newWidth <= 500) {
-      rightPanelWidth.value = newWidth
-    }
-  }
-}
-
-const stopResize = () => {
-  isResizingLeft.value = false
-  isResizingRight.value = false
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
-  
-  // Notify map to adjust to new container size without recentering
-  if (mapPanelRef.value && mapPanelRef.value.invalidateMapSize) {
-    mapPanelRef.value.invalidateMapSize()
-  }
-}
-
-onMounted(() => {
-  document.addEventListener('mousemove', handleMouseMove)
-  document.addEventListener('mouseup', stopResize)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('mousemove', handleMouseMove)
-  document.removeEventListener('mouseup', stopResize)
-})
-
 // Watch for panel collapse/expand to adjust map size without recentering
-watch([leftPanelCollapsed, rightPanelCollapsed], () => {
+watch([isLeftPanelCollapsed, isRightPanelCollapsed], () => {
   nextTick(() => {
-    if (mapPanelRef.value && mapPanelRef.value.invalidateMapSize) {
+    if (mapPanelRef.value?.invalidateMapSize) {
       mapPanelRef.value.invalidateMapSize()
     }
   })

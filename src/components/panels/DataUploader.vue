@@ -28,7 +28,7 @@
               placeholder="Enter Google Sheets URL"
               clearable
             />
-            <n-button type="primary" @click="handleGoogleSheets" :loading="loading">
+            <n-button type="primary" @click="handleGoogleSheets" :loading="isLoading">
               Import from Google Sheets
             </n-button>
             <n-text depth="3" style="font-size: 12px;">
@@ -73,13 +73,13 @@ import { parseFile, importFromGoogleSheets, validateData } from '@/utils/dataPar
 
 const dataStore = useDataStore()
 const sheetsUrl = ref('')
-const loading = ref(false)
+const isLoading = ref(false)
 const successMessage = ref('')
 const errorMessage = ref('')
 
 async function handleFileUpload({ file, onFinish, onError }) {
   try {
-    loading.value = true
+    isLoading.value = true
     errorMessage.value = ''
     
     const data = await parseFile(file.file)
@@ -93,7 +93,7 @@ async function handleFileUpload({ file, onFinish, onError }) {
     errorMessage.value = error.message
     onError()
   } finally {
-    loading.value = false
+    isLoading.value = false
   }
 }
 
@@ -110,7 +110,7 @@ async function handleGoogleSheets() {
   }
   
   try {
-    loading.value = true
+    isLoading.value = true
     errorMessage.value = ''
     
     const data = await importFromGoogleSheets(sheetsUrl.value)
@@ -121,7 +121,7 @@ async function handleGoogleSheets() {
   } catch (error) {
     errorMessage.value = error.message
   } finally {
-    loading.value = false
+    isLoading.value = false
   }
 }
 </script>

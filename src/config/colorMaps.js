@@ -1,3 +1,12 @@
+// Color scheme options for UI selects
+export const COLOR_SCHEME_OPTIONS = [
+  { label: 'Blue', value: 'blue' },
+  { label: 'Red', value: 'red' },
+  { label: 'Green', value: 'green' },
+  { label: 'Purple', value: 'purple' },
+  { label: 'Orange', value: 'orange' }
+]
+
 export const COLOR_MAPS = {
   red: [
     '#ffffff',

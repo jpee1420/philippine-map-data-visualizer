@@ -13,9 +13,4 @@ export const BOUNDARY_PATHS = {
   cities: `${BOUNDARY_BASE}/phl_admbnda_adm3_psa_namria_20231106.json`
 }
 
-// Backwards-compatible aliases for older code paths
-export const GADM_BASE = BOUNDARY_BASE
-export const GADM_PATHS = BOUNDARY_PATHS
-
 export const NCR_REGION_NAME = 'National Capital Region'
-export const NCR_PARENT_NAME = 'MetropolitanManila'

@@ -2,18 +2,18 @@
   <div class="map-container">
     <div ref="mapElement" id="map" class="map"></div>
     <div class="map-options-overlay">
-      <div class="map-options-card" :class="{ 'is-collapsed': optionsCollapsed }">
+      <div class="map-options-card" :class="{ 'is-collapsed': isOptionsCollapsed }">
         <div class="map-options-header">
           <span class="map-options-title">Map Options</span>
           <button
             type="button"
             class="map-options-toggle"
-            @click="optionsCollapsed = !optionsCollapsed"
+            @click="isOptionsCollapsed = !isOptionsCollapsed"
           >
-            {{ optionsCollapsed ? 'Show' : 'Hide' }}
+            {{ isOptionsCollapsed ? 'Show' : 'Hide' }}
           </button>
         </div>
-        <div v-if="!optionsCollapsed" class="map-options-row">
+        <div v-if="!isOptionsCollapsed" class="map-options-row">
           <span class="map-options-label">Color Scale</span>
           <n-select
             v-model:value="colorScheme"
@@ -21,14 +21,14 @@
             size="tiny"
           />
         </div>
-        <div v-if="!optionsCollapsed" class="map-options-row">
+        <div v-if="!isOptionsCollapsed" class="map-options-row">
           <span class="map-options-label">Callout Labels</span>
           <n-switch
             v-model:value="showCallouts"
             size="small"
           />
         </div>
-        <div v-if="!optionsCollapsed" class="map-options-row">
+        <div v-if="!isOptionsCollapsed" class="map-options-row">
           <span class="map-options-label">Callout Background</span>
           <n-switch
             v-model:value="calloutBackground"
@@ -38,7 +38,7 @@
       </div>
     </div>
 
-    <div v-if="loading" class="map-loading">
+    <div v-if="isLoading" class="map-loading">
       <n-spin size="large" />
       <p>Loading map...</p>
     </div>
@@ -46,37 +46,43 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { NSpin, NSelect, NSwitch } from 'naive-ui'
 
 import L from 'leaflet'
 import union from '@turf/union'
+import { forceSimulation, forceCollide, forceX, forceY } from 'd3-force'
 import { useDataStore } from '@/store/dataStore'
 import { loadGeoJSON } from '@/utils/geoUtils'
 import { normalizeLocationName } from '@/utils/nameUtils'
 import { BOUNDARY_PATHS, NCR_REGION_NAME } from '@/config/mapConfig'
-import { COLOR_MAPS } from '@/config/colorMaps'
+import { COLOR_MAPS, COLOR_SCHEME_OPTIONS } from '@/config/colorMaps'
+import { useMapControls } from '@/composables/useMapControls'
 
 import { debug } from '@/utils/logger'
 import { buildCalloutHtml } from '@/components/map/CalloutDialog.vue'
 
 const dataStore = useDataStore()
 const mapElement = ref(null)
-const map = ref(null)
+
+// Use map controls composable for map instance and interaction tracking
+const {
+  map,
+  isLoading,
+  lastFocusZoomed,
+  hasUserMoved,
+  initializeMap,
+  fitBoundsProgrammatic
+} = useMapControls()
+
 const geoLayer = ref(null)
 const calloutLayer = ref(null)
-const loading = ref(false)
 const colorScheme = ref('blue')
 const calloutPositions = ref({})
-const optionsCollapsed = ref(false)
+const isOptionsCollapsed = ref(false)
 
-const colorSchemeOptions = [
-  { label: 'Blue', value: 'blue' },
-  { label: 'Red', value: 'red' },
-  { label: 'Green', value: 'green' },
-  { label: 'Purple', value: 'purple' },
-  { label: 'Orange', value: 'orange' }
-]
+// Use color scheme options from config
+const colorSchemeOptions = COLOR_SCHEME_OPTIONS
 
 const showCallouts = computed({
   get: () => dataStore.showCalloutLabels,
@@ -92,48 +98,42 @@ watch(colorScheme, (newScheme) => {
   const newColors = COLOR_MAPS[newScheme]
   if (!newColors) return
   dataStore.colorScale.colors = newColors
-  // Recalculate usableColors and trigger color scale update
   dataStore.updateColorScale()
 })
 
-const lastFocusZoomed = ref(null) // Track last focus that was zoomed
-const userHasMoved = ref(false) // Track if user has manually moved map after auto-fit
-
-// Initialize map
+// Initialize map using composable
 onMounted(async () => {
-  loading.value = true
+  isLoading.value = true
   
   try {
-    // Create map instance
-    map.value = L.map(mapElement.value, {
-      center: [12.8797, 121.7740], // Philippines center
-      zoom: 6,
-      zoomControl: true,
-      minZoom: 5,
-      maxZoom: 13,
-      zoomSnap: 0.5,
-      zoomDelta: 0.5,
-      maxBoundsViscosity: 0.0,
-      preferCanvas: true // Better performance for many features
-    })
-    
-    // Track user manual map movements to prevent unwanted auto-centering
-    map.value.on('movestart', (e) => {
-      // Only set userHasMoved if the move was initiated by user (not programmatic)
-      // Leaflet doesn't provide a direct way to detect this, so we use a flag
-      if (!map.value._programmaticMove) {
-        userHasMoved.value = true
-      }
-    })
-    
+    initializeMap(mapElement.value)
     debug('[MapView] Map initialized successfully')
+    
+    // Register map event listeners for collision layout updates
+    if (map.value) {
+      map.value.on('zoomend', debouncedCollisionUpdate)
+      map.value.on('moveend', debouncedCollisionUpdate)
+      map.value.on('resize', debouncedCollisionUpdate)
+    }
     
     // Load GeoJSON based on current level
     await loadGeoJSONData()
   } catch (error) {
     console.error('Error initializing map:', error)
   } finally {
-    loading.value = false
+    isLoading.value = false
+  }
+})
+
+// Cleanup map event listeners on unmount
+onUnmounted(() => {
+  if (map.value) {
+    map.value.off('zoomend', debouncedCollisionUpdate)
+    map.value.off('moveend', debouncedCollisionUpdate)
+    map.value.off('resize', debouncedCollisionUpdate)
+  }
+  if (collisionUpdateTimeout) {
+    clearTimeout(collisionUpdateTimeout)
   }
 })
 
@@ -152,9 +152,7 @@ async function loadGeoJSONData() {
       break
   }
   
-  debug('[MapView] Loading GeoJSON from:', geoJsonPath)
   const geoData = await loadGeoJSON(geoJsonPath)
-  debug('[MapView] GeoJSON loaded, features:', geoData?.features?.length)
   
   let filteredGeoData = geoData
   
@@ -168,7 +166,6 @@ async function loadGeoJSONData() {
       // NCR: derive region outline and subdivisions from ADM3 (cities/municipalities)
       const subdivisionPath = `${basePath}${BOUNDARY_PATHS.cities}`
       
-      debug('[MapView] Loading ADM3 for NCR region outline and subdivisions')
       const subdivisionData = await loadGeoJSON(subdivisionPath)
 
       const allRegionCities = (subdivisionData.features || []).filter(feature => {
@@ -204,7 +201,6 @@ async function loadGeoJSONData() {
       // Non-NCR regions: derive region outline and province subdivisions from ADM2
       const provincePath = `${basePath}${BOUNDARY_PATHS.provinces}`
       
-      debug('[MapView] Loading ADM2 for region outline and province subdivisions')
       const provinceData = await loadGeoJSON(provincePath)
 
       const allRegionProvinces = (provinceData.features || []).filter(feature => {
@@ -237,16 +233,12 @@ async function loadGeoJSONData() {
         features
       }
     }
-
-    debug('[MapView] Filtered region features:', filteredGeoData.features.length)
   } else if (dataStore.mapLevel === 'provinces' && dataStore.mapFocus) {
     const focusProvince = dataStore.mapFocus
     const focusProvinceName = normalizeLocationName(focusProvince)
 
     // Provinces view: derive province outline and subdivisions from ADM3 (cities/municipalities)
     const subdivisionPath = `${basePath}${BOUNDARY_PATHS.cities}`
-    
-    debug('[MapView] Loading ADM3 for province outline and subdivisions')
     const subdivisionData = await loadGeoJSON(subdivisionPath)
 
     const allProvinceCities = (subdivisionData.features || []).filter(feature => {
@@ -272,9 +264,6 @@ async function loadGeoJSONData() {
         return code && selectedSet.has(code)
       })
       features = provinceFeature ? [provinceFeature, ...selectedSubFeatures] : selectedSubFeatures
-      debug('[MapView] Province outline + subdivision features:', features.length)
-    } else {
-      debug('[MapView] Province outline only (no subdivisions selected)')
     }
 
     filteredGeoData = {
@@ -379,14 +368,16 @@ function buildProvinceOutlineFeature(features, provinceName) {
 
 // Render GeoJSON with colors
 function renderGeoJSON(geoData) {
-  debug('[MapView] Rendering GeoJSON, features:', geoData?.features?.length)
   if (!map.value || !geoData) {
     console.warn('Cannot render: map or geoData is null')
     return
   }
   
-  // Remove existing layer
+  // Remove existing layer - unbind tooltips first to prevent animation errors
   if (geoLayer.value) {
+    geoLayer.value.eachLayer(layer => {
+      if (layer.unbindTooltip) layer.unbindTooltip()
+    })
     map.value.removeLayer(geoLayer.value)
   }
   
@@ -462,90 +453,7 @@ function renderGeoJSON(geoData) {
     },
     onEachFeature: (feature, layer) => {
       const locationName = getLocationName(feature)
-      
-      // Build tooltip content based on current pivot value fields and filtered data
-      let tooltipContent = `<strong>${locationName}</strong><br/>`
-
-      const aggregates =
-        typeof dataStore.getLocationAggregates === 'function'
-          ? dataStore.getLocationAggregates(locationName)
-          : null
-
-      if (aggregates && aggregates.valueSummaries && aggregates.valueSummaries.length > 0) {
-        const lines = []
-
-        aggregates.valueSummaries.forEach((summary) => {
-          if (!summary || !summary.field) return
-
-          if (summary.agg === 'count') {
-            // Categorical count field (e.g. gender)
-            lines.push(`<strong>${summary.field} (Count)</strong>`)
-            const entries = Object.entries(summary.counts || {})
-            if (entries.length === 0) {
-              lines.push('No values')
-            } else {
-              entries.forEach(([val, count]) => {
-                const countText = typeof count === 'number'
-                  ? count.toLocaleString('en-US')
-                  : String(count)
-                lines.push(`${val}: ${countText}`)
-              })
-            }
-          } else {
-            // Numeric metric field (sum/avg): respect the selected aggregation
-            // and show only that value, without separate "Sum:" / "Avg:" labels.
-            const count = typeof summary.count === 'number' ? summary.count : 0
-            let mainValue = null
-            if (summary.agg === 'avg' && summary.avg != null && !isNaN(summary.avg)) {
-              mainValue = summary.avg
-            } else if (summary.sum != null && !isNaN(summary.sum)) {
-              mainValue = summary.sum
-            }
-
-            const mainText = mainValue != null
-              ? mainValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-              : 'N/A'
-
-            lines.push(`<strong>${summary.field}</strong> (n=${count})`)
-            lines.push(mainText)
-          }
-        })
-
-        tooltipContent += lines.join('<br/>')
-      } else if (dataStore.selectedMetrics && dataStore.selectedMetrics.length > 0) {
-        // Fallback: show all selected numeric metrics from a representative row
-        let row = dataStore.findRowByLocation(locationName)
-        if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
-          row = dataStore.findRowByLocation(dataStore.mapFocus)
-        }
-
-        if (row) {
-          const metricLines = dataStore.selectedMetrics.map(metric => {
-            const value = parseFloat(row[metric])
-            const formattedValue = value !== null && !isNaN(value)
-              ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-              : 'N/A'
-            return `${metric}: ${formattedValue}`
-          }).join('<br/>')
-
-          tooltipContent += metricLines
-        } else {
-          tooltipContent += 'No data available'
-        }
-      } else if (dataStore.selectedMetric) {
-        // Final fallback: single selected metric from a representative row
-        let row = dataStore.findRowByLocation(locationName)
-        if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
-          row = dataStore.findRowByLocation(dataStore.mapFocus)
-        }
-        const value = row ? parseFloat(row[dataStore.selectedMetric]) : null
-        const formatted = value !== null && !isNaN(value)
-          ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-          : 'N/A'
-        tooltipContent += `${dataStore.selectedMetric}: ${formatted}`
-      } else {
-        tooltipContent += 'No data available'
-      }
+      const tooltipContent = buildTooltipContent(locationName)
       
       layer.bindTooltip(tooltipContent, { 
         permanent: false, 
@@ -572,50 +480,22 @@ function renderGeoJSON(geoData) {
     }
   }).addTo(map.value)
   
-  debug('[MapView] GeoJSON layer added to map')
-  
   // Fit bounds when a region/province is selected and it's different from last zoomed
   const shouldZoom = dataStore.mapFocus && 
                      geoData.features.length > 0 &&
                      lastFocusZoomed.value !== dataStore.mapFocus &&
-                     !userHasMoved.value // Don't auto-zoom if user has manually moved
-  
-  debug('[MapView] Should zoom?', shouldZoom, {
-    mapFocus: dataStore.mapFocus,
-    features: geoData.features.length,
-    lastZoomed: lastFocusZoomed.value,
-    userHasMoved: userHasMoved.value
-  })
+                     !hasUserMoved.value // Don't auto-zoom if user has manually moved
   
   if (shouldZoom) {
     const bounds = geoLayer.value.getBounds()
-    debug('[MapView] Fitting bounds for selection:', dataStore.mapFocus)
-    debug('[MapView] Bounds:', bounds)
     
     // Calculate appropriate zoom based on bounds size
     const boundsSize = bounds.getNorthEast().distanceTo(bounds.getSouthWest())
     const maxZoom = boundsSize < 100000 ? 11 : 10 // Higher zoom for smaller areas
     
-    debug('[MapView] Bounds size:', boundsSize, 'Max zoom:', maxZoom)
-    
-    // Use setTimeout to ensure layer is fully rendered
+    // Use setTimeout to ensure layer is fully rendered, then fit bounds programmatically
     setTimeout(() => {
-      // Mark this as a programmatic move to avoid setting userHasMoved flag
-      map.value._programmaticMove = true
-      
-      map.value.fitBounds(bounds, {
-        padding: [50, 50],
-        maxZoom: maxZoom,
-        animate: true,
-        duration: 0.5
-      })
-      
-      // Reset the flag after animation completes
-      setTimeout(() => {
-        map.value._programmaticMove = false
-      }, 600)
-      
-      debug('[MapView] fitBounds executed for:', dataStore.mapFocus)
+      fitBoundsProgrammatic(bounds, { maxZoom })
       lastFocusZoomed.value = dataStore.mapFocus
     }, 50)
   }
@@ -685,9 +565,7 @@ function renderCalloutLabels() {
     let value = null
     if (aggregates && Array.isArray(aggregates.valueSummaries) && aggregates.valueSummaries.length > 0) {
       // Prefer numeric summaries based on their configured aggregation, fall back to counts
-      const numericSummary = aggregates.valueSummaries.find(
-        (s) => s && s.agg !== 'count'
-      )
+      const numericSummary = aggregates.valueSummaries.find(s => s && s.agg !== 'count')
       if (numericSummary) {
         if (numericSummary.agg === 'avg' && numericSummary.avg != null && !isNaN(numericSummary.avg)) {
           value = numericSummary.avg
@@ -696,9 +574,7 @@ function renderCalloutLabels() {
         }
       }
       if (value === null || isNaN(value)) {
-        const countSummary = aggregates.valueSummaries.find(
-          (s) => s && s.agg === 'count' && typeof s.total === 'number' && !isNaN(s.total)
-        )
+        const countSummary = aggregates.valueSummaries.find(s => s && s.agg === 'count')
         if (countSummary) {
           value = countSummary.total
         } else if (typeof aggregates.rowCount === 'number' && !isNaN(aggregates.rowCount)) {
@@ -741,11 +617,9 @@ function renderCalloutLabels() {
   if (locationData.length <= 20) {
     // If viewing a focused region with few features (e.g., provinces in a region), show all
     topLocations = locationData
-    debug('[MapView] Showing callouts for all visible features:', topLocations.length)
   } else {
     // Otherwise show top 10 by value
     topLocations = locationData.slice(0, 10)
-    debug('[MapView] Showing top 10 callouts by value')
   }
   
   // Get current zoom level (used for label positioning; size is manually resizable)
@@ -768,12 +642,13 @@ function renderCalloutLabels() {
       labelPos = [savedPos.lat, savedPos.lng]
     }
     
-    // Base sizes for marker, line and label
-    const markerRadius = 4
-    const lineWeight = 1
-    const fontSize = 1
-    const labelWidth = 120
-    const labelHeight = 50
+    // Get zoom-responsive sizes
+    const responsiveSize = getZoomResponsiveSize(zoom)
+    const labelWidth = responsiveSize.width
+    const labelHeight = responsiveSize.height
+    const fontSize = responsiveSize.fontSize
+    const markerRadius = responsiveSize.markerRadius
+    const lineWeight = Math.max(1, Math.round(responsiveSize.fontSize))
     
     // Create marker at actual location center
     const marker = L.circleMarker(center, {
@@ -886,87 +761,169 @@ function refreshConnectorLines() {
   })
 }
 
-// Helper function to calculate label positions to avoid overlaps and stay within map bounds
-function calculateLabelPositions(locations, zoom) {
-  const positions = []
-  const mapBounds = map.value.getBounds()
-  const north = mapBounds.getNorth()
-  const south = mapBounds.getSouth()
-  const east = mapBounds.getEast()
-  const west = mapBounds.getWest()
+// Collision radius for D3 force simulation (pixels)
+const COLLISION_RADIUS_PX = 50
+
+// Base callout dimensions (at zoom level 8)
+const BASE_CALLOUT_WIDTH = 120
+const BASE_CALLOUT_HEIGHT = 50
+const BASE_MARKER_RADIUS = 4
+const BASE_FONT_SIZE = 1
+const REFERENCE_ZOOM = 8
+
+/**
+ * Calculate zoom-responsive callout dimensions
+ * Closer zoom (higher number) = smaller callouts
+ * Farther zoom (lower number) = larger callouts
+ * 
+ * @param {number} zoom - Current map zoom level
+ * @returns {Object} { width, height, fontSize, markerRadius }
+ */
+function getZoomResponsiveSize(zoom) {
+  // Scale factor: inversely proportional to zoom
+  // At zoom 8 (reference), scale = 1
+  // At zoom 12 (close), scale = 0.6
+  // At zoom 5 (far), scale = 1.4
+  const scaleFactor = Math.max(0.5, Math.min(1.6, REFERENCE_ZOOM / zoom))
   
-  // Calculate map dimensions
-  const latSpan = Math.abs(north - south)
-  const lngSpan = Math.abs(east - west)
-  
-  // Smaller offsets to keep callouts closer to their locations
-  const baseOffset = Math.min(latSpan, lngSpan) * 0.08
-  
-  // Padding from map edges (as percentage of span)
-  const padLat = latSpan * 0.05
-  const padLng = lngSpan * 0.05
-  
-  // Safe bounds for callout positions
-  const safeBounds = {
-    north: north - padLat,
-    south: south + padLat,
-    east: east - padLng,
-    west: west + padLng
+  return {
+    width: Math.round(BASE_CALLOUT_WIDTH * scaleFactor),
+    height: Math.round(BASE_CALLOUT_HEIGHT * scaleFactor),
+    fontSize: BASE_FONT_SIZE * scaleFactor,
+    markerRadius: Math.max(2, Math.round(BASE_MARKER_RADIUS * scaleFactor))
   }
-  
-  // Track used positions to avoid overlaps
-  const usedPositions = []
-  const minDistance = Math.min(latSpan, lngSpan) * 0.12 // Minimum distance between callouts
-  
-  // Distribute callouts in a circular pattern around their centers
-  const angleStep = (2 * Math.PI) / Math.max(locations.length, 8)
-  const startAngle = -Math.PI / 4 // Start from top-right
-  
-  locations.forEach((location, index) => {
+}
+
+/**
+ * D3 Force-based collision avoidance for callout labels
+ * Treats each callout as a node and uses force simulation to prevent overlaps
+ * 
+ * @param {Array} locations - Array of location objects with center [lat, lng]
+ * @param {Object} options - Configuration options
+ * @param {number} options.collisionRadius - Collision radius in pixels (default: 50)
+ * @param {number} options.iterations - Number of simulation iterations (default: 150)
+ * @param {number} options.strength - Force strength for returning to original position (default: 0.5)
+ * @returns {Array} Array of adjusted [lat, lng] positions
+ */
+function applyCollisionAvoidance(locations, options = {}) {
+  if (!map.value || !locations || locations.length === 0) {
+    return locations.map(loc => loc.center)
+  }
+
+  const {
+    collisionRadius = COLLISION_RADIUS_PX,
+    iterations = 150,
+    strength = 0.5
+  } = options
+
+  const mapInstance = map.value
+
+  // Step 1: Convert each location to a node with pixel coordinates
+  const nodes = locations.map((location, index) => {
     const center = location.center
+    const anchor = L.latLng(center[0], center[1])
+    const point = mapInstance.latLngToLayerPoint(anchor)
     
-    // Calculate position using radial distribution
-    let bestPos = null
-    let bestDistance = -1
-    
-    // Try multiple angles to find a non-overlapping position
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const angle = startAngle + (index * angleStep) + (attempt * Math.PI / 4)
-      const offsetLat = Math.sin(angle) * baseOffset * (1 + attempt * 0.3)
-      const offsetLng = Math.cos(angle) * baseOffset * (1 + attempt * 0.3)
-      
-      let lat = center[0] + offsetLat
-      let lng = center[1] + offsetLng
-      
-      // Constrain to safe bounds
-      lat = Math.max(safeBounds.south, Math.min(safeBounds.north, lat))
-      lng = Math.max(safeBounds.west, Math.min(safeBounds.east, lng))
-      
-      // Check distance from existing positions
-      let minDistFromOthers = Infinity
-      for (const used of usedPositions) {
-        const dist = Math.sqrt(Math.pow(lat - used[0], 2) + Math.pow(lng - used[1], 2))
-        minDistFromOthers = Math.min(minDistFromOthers, dist)
-      }
-      
-      if (minDistFromOthers > bestDistance) {
-        bestDistance = minDistFromOthers
-        bestPos = [lat, lng]
-        
-        // If we found a position with enough separation, use it
-        if (minDistFromOthers >= minDistance) {
-          break
-        }
-      }
+    return {
+      id: location.name || `node-${index}`,
+      index,
+      anchor,
+      // Original pixel position (target for forces)
+      xOriginal: point.x,
+      yOriginal: point.y,
+      // Current position (will be adjusted by simulation)
+      x: point.x,
+      y: point.y
     }
-    
-    // Use best found position or fallback
-    const finalPos = bestPos || [center[0] + baseOffset, center[1] + baseOffset]
-    positions.push(finalPos)
-    usedPositions.push(finalPos)
   })
+
+  // Get map container bounds in layer points for constraining
+  const mapSize = mapInstance.getSize()
+  const padding = collisionRadius // Padding from edges
+  const minX = padding
+  const maxX = mapSize.x - padding
+  const minY = padding
+  const maxY = mapSize.y - padding
+
+  // Step 2: Run D3 force simulation
+  const simulation = forceSimulation(nodes)
+    // Collision force - prevents overlap
+    .force('collide', forceCollide()
+      .radius(collisionRadius)
+      .strength(0.8)
+      .iterations(3)
+    )
+    // X force - pulls nodes back toward original X position
+    .force('x', forceX(d => d.xOriginal).strength(strength))
+    // Y force - pulls nodes back toward original Y position  
+    .force('y', forceY(d => d.yOriginal).strength(strength))
+    // Stop auto-ticking, we'll manually tick
+    .stop()
+
+  // Run simulation for specified iterations
+  for (let i = 0; i < iterations; i++) {
+    simulation.tick()
+    
+    // After each tick, constrain nodes to map bounds
+    nodes.forEach(node => {
+      node.x = Math.max(minX, Math.min(maxX, node.x))
+      node.y = Math.max(minY, Math.min(maxY, node.y))
+    })
+  }
+
+  // Step 3: Convert adjusted pixel positions back to geographic coordinates
+  // Also apply final bounds check
+  const adjustedPositions = nodes.map(node => {
+    // Final bounds constraint
+    const constrainedX = Math.max(minX, Math.min(maxX, node.x))
+    const constrainedY = Math.max(minY, Math.min(maxY, node.y))
+    const adjustedPoint = L.point(constrainedX, constrainedY)
+    const adjustedLatLng = mapInstance.layerPointToLatLng(adjustedPoint)
+    return [adjustedLatLng.lat, adjustedLatLng.lng]
+  })
+
+  return adjustedPositions
+}
+
+// ... (rest of the code remains the same)
+/**
+ * Calculate label positions using D3 force collision avoidance
+ * This replaces the old radial distribution approach with physics-based positioning
+ */
+function calculateLabelPositions(locations, zoom) {
+  // Use collision avoidance with zoom-responsive radius
+  // Smaller radius at higher zoom (more detail), larger at lower zoom
+  const baseRadius = COLLISION_RADIUS_PX
+  const zoomFactor = Math.max(0.5, Math.min(1.5, zoom / 8))
+  const adjustedRadius = baseRadius / zoomFactor
+
+  return applyCollisionAvoidance(locations, {
+    collisionRadius: adjustedRadius,
+    iterations: 150,
+    strength: 0.4
+  })
+}
+
+/**
+ * Update collision layout when map view changes
+ * Called on zoom, move, and resize events
+ */
+function updateCollisionLayout() {
+  if (!dataStore.showCalloutLabels || !calloutLayer.value) return
   
-  return positions
+  // Re-render callouts with new positions based on current view
+  renderCalloutLabels()
+}
+
+// Debounce helper to prevent excessive recalculations
+let collisionUpdateTimeout = null
+function debouncedCollisionUpdate() {
+  if (collisionUpdateTimeout) {
+    clearTimeout(collisionUpdateTimeout)
+  }
+  collisionUpdateTimeout = setTimeout(() => {
+    updateCollisionLayout()
+  }, 100)
 }
 
 // Helper function to get location name from feature properties
@@ -1081,6 +1038,90 @@ function updateLayerColors() {
   }
 }
 
+// Helper function to build tooltip content
+function buildTooltipContent(locationName) {
+  const aggregates =
+    typeof dataStore.getLocationAggregates === 'function'
+      ? dataStore.getLocationAggregates(locationName)
+      : null
+
+  if (aggregates && aggregates.valueSummaries && aggregates.valueSummaries.length > 0) {
+    const lines = []
+
+    aggregates.valueSummaries.forEach((summary) => {
+      if (!summary || !summary.field) return
+
+      if (summary.agg === 'count') {
+        // Categorical count field (e.g. gender)
+        lines.push(`<strong>${summary.field} (Count)</strong>`)
+        const entries = Object.entries(summary.counts || {})
+        if (entries.length === 0) {
+          lines.push('No values')
+        } else {
+          entries.forEach(([val, count]) => {
+            const countText = typeof count === 'number'
+              ? count.toLocaleString('en-US')
+              : String(count)
+            lines.push(`${val}: ${countText}`)
+          })
+        }
+      } else {
+        // Numeric metric field (sum/avg): respect selected aggregation and
+        // show only that value, mirroring callout behavior.
+        const count = typeof summary.count === 'number' ? summary.count : 0
+        let mainValue = null
+        if (summary.agg === 'avg' && summary.avg != null && !isNaN(summary.avg)) {
+          mainValue = summary.avg
+        } else if (summary.sum != null && !isNaN(summary.sum)) {
+          mainValue = summary.sum
+        }
+
+        const mainText = mainValue != null
+          ? mainValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : 'N/A'
+
+        lines.push(`<strong>${summary.field}</strong> (n=${count})`)
+        lines.push(mainText)
+      }
+    })
+
+    return `<strong>${locationName}</strong><br/>${lines.join('<br/>')}`
+  } else if (dataStore.selectedMetrics && dataStore.selectedMetrics.length > 0) {
+    // Fallback: show all selected numeric metrics from a representative row
+    let row = dataStore.findRowByLocation(locationName)
+    if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+      row = dataStore.findRowByLocation(dataStore.mapFocus)
+    }
+
+    if (row) {
+      const metricLines = dataStore.selectedMetrics.map(metric => {
+        const value = parseFloat(row[metric])
+        const formattedValue = value !== null && !isNaN(value)
+          ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : 'N/A'
+        return `${metric}: ${formattedValue}`
+      }).join('<br/>')
+
+      return `<strong>${locationName}</strong><br/>${metricLines}`
+    } else {
+      return `<strong>${locationName}</strong><br/>No data available`
+    }
+  } else if (dataStore.selectedMetric) {
+    // Final fallback: single selected metric from a representative row
+    let row = dataStore.findRowByLocation(locationName)
+    if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
+      row = dataStore.findRowByLocation(dataStore.mapFocus)
+    }
+    const value = row ? parseFloat(row[dataStore.selectedMetric]) : null
+    const formatted = value !== null && !isNaN(value)
+      ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : 'N/A'
+    return `<strong>${locationName}</strong><br/>${dataStore.selectedMetric}: ${formatted}`
+  } else {
+    return `<strong>${locationName}</strong><br/>No data available`
+  }
+}
+
 // Helper function to update tooltips based on current pivot configuration
 function updateLayerTooltips() {
   if (dataStore.geoData && geoLayer.value) {
@@ -1088,88 +1129,7 @@ function updateLayerTooltips() {
       if (!layer.feature) return
 
       const locationName = getLocationName(layer.feature)
-      let tooltipContent = `<strong>${locationName}</strong><br/>`
-
-      const aggregates =
-        typeof dataStore.getLocationAggregates === 'function'
-          ? dataStore.getLocationAggregates(locationName)
-          : null
-
-      if (aggregates && aggregates.valueSummaries && aggregates.valueSummaries.length > 0) {
-        const lines = []
-
-        aggregates.valueSummaries.forEach((summary) => {
-          if (!summary || !summary.field) return
-
-          if (summary.agg === 'count') {
-            // Categorical count field (e.g. gender)
-            lines.push(`<strong>${summary.field} (Count)</strong>`)
-            const entries = Object.entries(summary.counts || {})
-            if (entries.length === 0) {
-              lines.push('No values')
-            } else {
-              entries.forEach(([val, count]) => {
-                const countText = typeof count === 'number'
-                  ? count.toLocaleString('en-US')
-                  : String(count)
-                lines.push(`${val}: ${countText}`)
-              })
-            }
-          } else {
-            // Numeric metric field (sum/avg): respect selected aggregation and
-            // show only that value, mirroring callout behavior.
-            const count = typeof summary.count === 'number' ? summary.count : 0
-            let mainValue = null
-            if (summary.agg === 'avg' && summary.avg != null && !isNaN(summary.avg)) {
-              mainValue = summary.avg
-            } else if (summary.sum != null && !isNaN(summary.sum)) {
-              mainValue = summary.sum
-            }
-
-            const mainText = mainValue != null
-              ? mainValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-              : 'N/A'
-
-            lines.push(`<strong>${summary.field}</strong> (n=${count})`)
-            lines.push(mainText)
-          }
-        })
-
-        tooltipContent += lines.join('<br/>')
-      } else if (dataStore.selectedMetrics && dataStore.selectedMetrics.length > 0) {
-        // Fallback: show all selected numeric metrics from a representative row
-        let row = dataStore.findRowByLocation(locationName)
-        if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
-          row = dataStore.findRowByLocation(dataStore.mapFocus)
-        }
-
-        if (row) {
-          const metricLines = dataStore.selectedMetrics.map(metric => {
-            const value = parseFloat(row[metric])
-            const formattedValue = value !== null && !isNaN(value)
-              ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-              : 'N/A'
-            return `${metric}: ${formattedValue}`
-          }).join('<br/>')
-
-          tooltipContent += metricLines
-        } else {
-          tooltipContent += 'No data available'
-        }
-      } else if (dataStore.selectedMetric) {
-        // Final fallback: single selected metric from a representative row
-        let row = dataStore.findRowByLocation(locationName)
-        if (!row && dataStore.mapLevel === 'regions' && dataStore.mapFocus) {
-          row = dataStore.findRowByLocation(dataStore.mapFocus)
-        }
-        const value = row ? parseFloat(row[dataStore.selectedMetric]) : null
-        const formatted = value !== null && !isNaN(value)
-          ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-          : 'N/A'
-        tooltipContent += `${dataStore.selectedMetric}: ${formatted}`
-      } else {
-        tooltipContent += 'No data available'
-      }
+      const tooltipContent = buildTooltipContent(locationName)
 
       layer.unbindTooltip()
       layer.bindTooltip(tooltipContent, {
@@ -1202,7 +1162,6 @@ watch(() => dataStore.selectedMetric, refreshLayerVisuals)
 
 // Watch for map level changes to reload appropriate GeoJSON
 watch(() => dataStore.mapLevel, async () => {
-  debug('[MapView] Map level changed to:', dataStore.mapLevel)
   calloutPositions.value = {}
   await loadGeoJSONData()
   if (dataStore.showCalloutLabels && dataStore.geoData) {
@@ -1212,11 +1171,10 @@ watch(() => dataStore.mapLevel, async () => {
 
 // Watch for map focus changes to filter features
 watch(() => dataStore.mapFocus, async (newFocus, oldFocus) => {
-  debug('[MapView] Map focus changed:', oldFocus, '->', newFocus)
   // Reset flags when focus changes to allow auto-zoom on new selection
   if (newFocus !== oldFocus) {
     lastFocusZoomed.value = null
-    userHasMoved.value = false // Reset to allow auto-zoom on new selection
+    hasUserMoved.value = false // Reset to allow auto-zoom on new selection
   }
   calloutPositions.value = {}
   await loadGeoJSONData()
@@ -1227,7 +1185,6 @@ watch(() => dataStore.mapFocus, async (newFocus, oldFocus) => {
 
 // Watch for selected subdivisions changes to update boundaries
 watch(() => dataStore.selectedSubdivisions, async () => {
-  debug('[MapView] Selected subdivisions changed:', dataStore.selectedSubdivisions)
   calloutPositions.value = {}
   await loadGeoJSONData()
   if (dataStore.showCalloutLabels && dataStore.geoData) {
