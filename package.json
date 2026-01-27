@@ -1,0 +1,32 @@
+{
+  "name": "vue-leaflet-echarts",
+  "version": "1.0.0",
+  "description": "Philippine filled map visualization app using Vue 3, Leaflet, and D3.js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vicons/ionicons5": "^0.13.0",
+    "@vueuse/core": "^14.1.0",
+    "d3-force": "^3.0.0",
+    "html2canvas": "^1.4.1",
+    "leaflet": "^1.9.4",
+    "naive-ui": "^2.43.1",
+    "papaparse": "^5.5.3",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.24",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@turf/union": "^6.5.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.17",
+    "vite": "^7.2.2"
+  }
+}
